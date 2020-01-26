@@ -1,0 +1,74 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  font-size: 0;
+}
+
+body {
+  margin: 0;
+  font-size: 10px;
+  font-family: Lucida Grande,sans-serif;
+  background-color: #000;
+}
+
+.noselect {
+  user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+
+select {
+  color: #fff;
+  background-color: #333;
+  border: none;
+  outline: none;
+  flex: none;
+}
+
+.error {
+  background-color: #822 !important;
+}
+
+/* CodeMirror overrides */
+.CodeMirror {
+  color: white;
+  height: 100%;
+  background-color: #111;
+}
+.CodeMirror-gutters {
+  background-color: #111;
+}
+.CodeMirror-scrollbar-filler, .CodeMirror-gutter-filler {
+  background: none;
+}
+.CodeMirror-linenumber {
+  color: #fe2;
+}
+.CodeMirror-cursor {
+  border-left: 1px solid #7e7;
+}
+.cm-fat-cursor-mark {
+  background-color: rgba(20, 255, 20, 0.5);
+  -webkit-animation: blink 1.06s steps(1) infinite;
+  -moz-animation: blink 1.06s steps(1) infinite;
+  animation: blink 1.06s steps(1) infinite;
+}
+.cm-s-default .cm-keyword {color: #3ca;}
+.cm-s-default .cm-keyword-2 {color: #e22;}
+.cm-s-default .cm-number {color: #39e;}
+.cm-s-default .cm-variable { color: #ccc; }
+.cm-s-default .cm-variable-3 {color: #085;}
+.cm-s-default .cm-comment {color: #39e;}
+.cm-s-default .cm-builtin {color: #e72;}
+.cm-searching {
+  background: #ffa;
+  background: rgba(255, 255, 0, .4);
+}
+div.CodeMirror span.CodeMirror-matchingbracket {color: #0f0;}
+div.CodeMirror span.CodeMirror-nonmatchingbracket {color: #f22;}

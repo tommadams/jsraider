@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "outDir": "./built",
+    "target": "es6",
+    "sourceMap": true,
+    "module": "amd",
+
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+
+    "types": [
+      "webgl2"
+    ],
+
+    "typeRoots": [
+      "./toybox/external/WebGL2-TypeScript"
+    ],
+
+    "lib": [
+      "es2017.sharedmemory",
+      "DOM","ES6","DOM.Iterable","ScriptHost"
+    ]
+  },
+  "include": [
+    "./**/*"
+  ],
+  "exclude": [
+    "./built"
+  ]
+}

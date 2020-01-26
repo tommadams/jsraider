@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <head>
+    <title>Hello, Tomb Raider</title>
+    <script src="../closure-library/closure/goog/base.js"></script>
+    <script src="deps.js"></script>
+  </head>
+
+  <body>
+    <script>
+      goog.require('raider.App');
+      goog.require('goog.net.XhrIo');
+
+      window.onload = function() {
+        let levels = [
+          'GYM.PHD',
+          'LEVEL01.PHD',
+          'LEVEL02.PHD',
+          'LEVEL03A.PHD',
+          'LEVEL03B.PHD',
+          'LEVEL04.PHD',
+          'LEVEL05.PHD',
+          'LEVEL06.PHD',
+          'LEVEL07A.PHD',
+          'LEVEL07B.PHD',
+          'LEVEL08A.PHD',
+          'LEVEL08B.PHD',
+          'LEVEL08C.PHD',
+          'LEVEL10A.PHD',
+          'LEVEL10B.PHD',
+          'LEVEL10C.PHD'];
+        let canvas = document.createElement('canvas');
+        let ctx = new toybox.Context(
+            canvas, { antialias: false, depth: false, stencil: false },
+            ['EXT_texture_filter_anisotropic']);
+        let levelIdx = 0;
+        let testLevel = function() {
+          document.body.appendChild(document.createTextNode('loading: ' + levels[levelIdx]));
+          document.body.appendChild(document.createElement('br'));
+          let xhrIo = new goog.net.XhrIo();
+          xhrIo.setResponseType(goog.net.XhrIo.ResponseType.ARRAY_BUFFER);
+          goog.events.listenOnce(xhrIo, goog.net.EventType.COMPLETE, function(evt) {
+            if (xhrIo.isSuccess()) {
+              let buf = xhrIo.getResponse();
+              let scene = new raider.Scene(buf, ctx);
+              let minAmbient = 8192;
+              let minAmbientRoom = -1;
+              let maxAmbient = 0;
+              let maxAmbientRoom = -1;
+              for (let room of scene.rooms) {
+                if (room.originalAmbientIntensity > maxAmbient) {
+                  maxAmbient =room.originalAmbientIntensity;
+                  maxAmbientRoom = i;
+                }
+                if (room.originalAmbientIntensity < minAmbient) {
+                  minAmbient =room.originalAmbientIntensity;
+                  minAmbientRoom = i;
+                }
+              }
+              console.log(
+                  levels[levelIdx], minAmbientRoom, minAmbient,
+                  maxAmbientRoom, maxAmbient);
+              xhrIo.dispose();
+              levelIdx += 1;
+              if (levelIdx < levels.length) {
+                testLevel();
+              } else {
+                document.body.appendChild(document.createTextNode('done'));
+              }
+            } else {
+              throw new Error('Failed to load "' + levels[levelIdx]);
+            }
+          });
+          xhrIo.send('levels/' + levels[levelIdx]);
+        };
+        testLevel();
+      };
+    </script>
+  </body>
+</html>

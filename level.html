@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <head>
+    <title>jsRaider</title>
+    <script src="toybox/external/codemirror/codemirror.js"></script>
+    <script src="toybox/external/codemirror/keymap/vim.js"></script>
+    <script src="toybox/external/codemirror/addon/mode/simple.js"></script>
+    <script src="toybox/external/codemirror/addon/search/search.js"></script>
+    <script src="toybox/external/codemirror/addon/search/searchcursor.js"></script>
+    <link href="toybox/external/codemirror/codemirror.css" rel="stylesheet">
+    <link href="style.css" rel="stylesheet">
+
+    <script data-main="built/raider" src="toybox/external/require/require.js"></script>
+
+    <!-- disable favicon requests -->
+    <link id="favicon" rel="icon" href="data:;base64,iVBORw0KGgo=">
+
+    <style>
+      #canvas {
+        width: 100%;
+        height: 100%;
+      }
+      #canvas-toggle {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        cursor: pointer;
+        background-color: #888;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.2;
+        transition: opacity 0.2s ease-out;
+        user-select: none;
+      }
+      #canvas-toggle:hover { opacity: 0.6; }
+
+      #main-panel {
+        position: absolute;
+        left: 40%;
+        top: 0;
+        width: 60%;
+        height: 60%;
+      }
+
+      #left-panel {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 40%;
+        height: 60%;
+        display: flex;
+        flex-flow: column;
+        background-color: #111;
+        border-right: 1px solid #222;
+      }
+
+      #bottom-panel {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 40%;
+        color: #fff;
+        background-color: #111;
+        border-top: 1px solid #222;
+      }
+
+      #log {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 70%;
+        height: 100%;
+        color: #ccc;
+        background-color: #111;
+        white-space: pre;
+        overflow: scroll;
+        font-family: monospace;
+        font-size: 10px;
+        line-height: 11px;
+      }
+
+      #options {
+        user-select: none;
+        position: absolute;
+        left: 70%;
+        top: 0;
+        width: 30%;
+        height: 100%;
+        border-left: 1px solid #222;
+        overflow: scroll;
+      }
+      #options > div {
+        display: flex;
+        padding: 3px;
+        border-bottom: 1px solid #222;
+        height: 26px;
+        align-items: center;
+      }
+      #options > div > div {
+        flex: none;
+        display: flex;
+        width: 100px;
+      }
+      #options select {
+        width: 100%;
+      }
+      #options .range-slider {
+        flex: auto;
+        cursor: ew-resize;
+      }
+      #options .range-text {
+        flex: none;
+        width: 48px;
+        height: 100%;
+        margin-left: 4px;
+        color: #fff;
+        background-color: #333;
+        text-align: right;
+        border: none;
+        outline: none;
+        font-family: monospace;
+      }
+      #options .text {
+        flex: auto;
+        height: 100%;
+        color: #fff;
+        background-color: #333;
+        text-align: right;
+        border: none;
+        outline: none;
+        font-family: monospace;
+      }
+
+      #profile-hud {
+        background-color: rgba(0, 0, 0, 0.3);
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 128px;
+        color: #0f0;
+      }
+      #profile-hud table {
+        border-spacing: 0;
+        font-size: 10px;
+        line-height: 1;
+        font-family: monospace;
+        width: 100%;
+      }
+      #profile-hud td:first-child {
+        text-align: right;
+      }
+      #profile-hud td {
+        white-space: pre;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="main-panel">
+      <canvas id="canvas" tabindex="1"></canvas>
+      <div id="canvas-toggle">+</div>
+      <div id="profile-hud"></div>
+    </div>
+    <div id="left-panel"></div>
+    <div id="bottom-panel">
+      <div id="log"></div>
+      <div id="options"></div>
+    </div>
+  </body>
+</html>

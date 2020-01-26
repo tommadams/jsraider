@@ -1,0 +1,7 @@
+.DS_store
+built
+*.swp
+*.swo
+*~
+levels
+music
