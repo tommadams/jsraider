@@ -603,7 +603,7 @@ export class Lara extends Controller {
         if (this.state == State.WALK || this.state == State.RUN) {
           this.hardTransitionToIdle();
         }
-        let controller = this.scene.controllers[trigger.actions[1] & 0x3ff];
+        let controller = this.scene.items[trigger.actions[1] & 0x3ff].controller;
         if (isSwitch(controller)) {
           let switchState = 1 - controller.item.animState.anim.state;
           let laraState = switchState ? State.SWITCH_UP : State.SWITCH_DOWN;
@@ -657,7 +657,7 @@ export class Lara extends Controller {
               if (this.item.animState.canChangeState(laraState) &&
                   this.canPushBlockTo(targetRoom, this.i + di, this.j + dj, item.position[1])) {
                 item.rotation[1] = this.item.rotation[1];
-                item.animState.tryChangeState(blockState);
+                item.controller.changeState(blockState);
                 return laraState;
               }
             }
@@ -1603,19 +1603,22 @@ export class Lara extends Controller {
     this.item.room = this.sector.room;
   
     if (this.sector != this.prevSector) {
+      this.logFloorData();
       this.updateTriggers();
       this.prevSector = this.sector;
     }
   }
 
   private logFloorData() {
-    if (this.sector.floorData.funcs.length == 0) {
+    let sector = this.sector.getResolvedFloorSector();
+
+    if (sector.floorData.funcs.length == 0) {
       return;
     }
   
     let lines = [];
-    for (let i = 0; i < this.sector.floorData.funcs.length; ++i) {
-      let func = this.sector.floorData.funcs[i];
+    for (let i = 0; i < sector.floorData.funcs.length; ++i) {
+      let func = sector.floorData.funcs[i];
       let activationMask = func.actions[0] >> 9;
       let once = (func.actions[0] >> 8) & 1;
   
@@ -1682,8 +1685,8 @@ export class Lara extends Controller {
   }
 
   private updateTriggers() {
-    this.logFloorData();
-    let funcs = this.sector.getTriggers((func: FloorFunc) => {
+    let sector = this.sector.getResolvedFloorSector();
+    let funcs = sector.getTriggers((func: FloorFunc) => {
       return (func.sub == TriggerType.TRIGGER_ON ||
               func.sub == TriggerType.TRIGGER_OFF ||
               func.sub == TriggerType.PAD_ON ||
@@ -1693,6 +1696,15 @@ export class Lara extends Controller {
     // TODO(tom): Figure out modifiers (Lara in the air, etc).
     for (let func of funcs) {
       let triggerState;
+
+      // Skip pad triggers if Lara isn't on the ground.
+      if (func.sub == TriggerType.PAD_ON ||
+         func.sub == TriggerType.PAD_ON) {
+        if (this.locomotionType != LocomotionType.GROUND) {
+          continue;
+        }
+      }
+
       if (func.sub == TriggerType.TRIGGER_ON ||
           func.sub == TriggerType.PAD_ON) {
         triggerState = 1;

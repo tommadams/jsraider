@@ -9,7 +9,9 @@ export class Controller {
   private pendingState = -1;
   protected animStateCommand = new AnimState.Command();
 
-  constructor(public item: Item, public scene: Scene) {}
+  constructor(public item: Item, public scene: Scene) {
+    this.item.controller = this;
+  }
 
   update(dt: number) {
     let item = this.item;
