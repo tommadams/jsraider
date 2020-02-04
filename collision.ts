@@ -88,12 +88,12 @@ export function resolveRoomByGrid(room: Room, i: number, j: number, y: number) {
       room = sector.floorData.portal;
       sector = room.getSectorByGrid(i, j);
     }
-    if (sector.roomBelow != null && y > room.yBottom) {
+    if (sector.roomBelow != null && y > sector.floor) {
       room = sector.roomBelow;
       sector = room.getSectorByGrid(i, j);
       continue;
     }
-    if (sector.roomAbove != null && y < room.yTop) {
+    if (sector.roomAbove != null && y < sector.ceiling) {
       room = sector.roomAbove;
       sector = room.getSectorByGrid(i, j);
       continue;
@@ -188,8 +188,7 @@ export function sphereCast(room: Room, p: vec3.Type, v: vec3.Type, r: number,
       // If we haven't hit anything, make sure we set the intersection position
       // anyway.
       if (!result) {
-        vec3.scale(intersection.geom.p, intersection.geom.t, v);
-        vec3.add(intersection.geom.p, p, intersection.geom.p);
+        vec3.addScaled(intersection.geom.p, p, v, intersection.geom.t);
       }
       // Always resolve the correct room for the intersection position to handle
       // the case where the intersection position is above or below the current
@@ -202,15 +201,16 @@ export function sphereCast(room: Room, p: vec3.Type, v: vec3.Type, r: number,
     t0 = t1;
     y0 = y1;
 
-    let oldRoom = room;
     room = resolveRoomByGrid(room, it.i, it.j, p[1] + t1 * v[1]);
     intersection.room = room;
   } while (room != null && room.getSectorByGrid(it.i, it.j) != null);
 
   return result;
 }
+(window as any)['sphereCast'] = sphereCast;
 
-export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number, h: number, intersection: Intersection, state: State) {
+export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number, h: number,
+                              intersection: Intersection, state: State) {
   let result = false;
 
   let minY = -h;
@@ -220,13 +220,14 @@ export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number,
   let dropThreshold = Infinity;
   if (state == State.JUMP_UP) {
     stepUpThreshold = 0;
-  } else if (State.isSwimming(state)) {
+  } else if (State.isSwimming(state) || state == State.DIVE) {
+    stepUpThreshold = 0;
     minY = -r;
     maxY = r;
   } else if (State.isTreadingWater(state)) {
+    stepUpThreshold = 0;
     minY = -100;
     maxY = 700;
-    stepUpThreshold = 0;
   } else if (State.isSideStepping(state)) {
     stepUpThreshold = -128;
     dropThreshold = 128;
@@ -272,7 +273,9 @@ export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number,
             sector: sector,
             t: intersect.t,
             nx: intersect.n[0],
-            nz: intersect.n[1]
+            nz: intersect.n[1],
+            di: i - oi,
+            dj: j - oj,
           });
         }
       }
@@ -288,6 +291,23 @@ export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number,
     if (firstCandidate != null && candidate.t > firstCandidate.t) {
       continue;
     }
+    let slope = candidate.sector.floorData.floorSlope;
+    if (State.isWalking(state) || State.isSideStepping(state)) {
+      // If Lara is walking, don't let her walk onto any steep slopes.
+      if (Math.abs(slope[0]) > 512 || Math.abs(slope[1]) > 512) {
+        firstCandidate = candidate;
+        continue;
+      }
+    } else if (state == State.RUN || state == State.FAST_BACK) {
+      // If Lara is running, only allow her to run onto a steep slope if it's
+      // downhill.
+      if ((Math.abs(slope[0]) > 512 && candidate.di != -Math.sign(slope[0])) ||
+          (Math.abs(slope[1]) > 512 && candidate.dj != -Math.sign(slope[1]))) {
+        firstCandidate = candidate;
+        continue;
+      }
+    }
+
     let x = p[0] + candidate.t * v[0];
     let y = p[1] + candidate.t * v[1];
     let z = p[2] + candidate.t * v[2];
@@ -296,11 +316,13 @@ export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number,
     if (floor - p[1] < stepUpThreshold ||
         floor - p[1] > dropThreshold) {
       firstCandidate = candidate;
+      continue;
     }
     let ceiling = candidate.sector.getCeilingAt(pos);
     if (p[1] + minY < ceiling ||
         maxY - minY > floor - ceiling) {
       firstCandidate = candidate;
+      continue;
     }
   }
 

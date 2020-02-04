@@ -9,14 +9,6 @@
     "noImplicitReturns": true,
     "noImplicitThis": true,
 
-    "types": [
-      "webgl2"
-    ],
-
-    "typeRoots": [
-      "./toybox/external/WebGL2-TypeScript"
-    ],
-
     "lib": [
       "es2017.sharedmemory",
       "DOM","ES6","DOM.Iterable","ScriptHost"

@@ -8,7 +8,6 @@ out vec2 v_uv;
 void main() {
   vec4 pos4 = vec4(position, 1);
   gl_Position = viewProj * pos4;
-  gl_Position.w += 0.1;
   v_uv = (shadowViewProj * pos4).xy;
   v_uv = 0.5 + 0.5 * v_uv;
 }

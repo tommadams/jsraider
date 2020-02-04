@@ -10,24 +10,31 @@ let soundMap_ = new Int16Array(0);
 let soundDetails_: SoundDetails[] = [];
 let listenerTransform_ = mat4.newZero();
 
-let pendingTrack = -1;
+let playedTrackMask: number[] = [];
 
 // Browsers these days prevent audio from playing before the user has interacted
-// with the page.
+// with the page. So if a request for audio is made at the start of the level
+// (e.g. Lara's home in TR1), enqueue the track number until the first valid
+// interaction.
+let pendingTrack: {track: number, mask: number} = null;
 let userInteracted = false;
 let listeners = [
-  'mousemove', 'mousedown', 'scroll', 'keydown', 'click', 'touchstart',
+  'mousedown', 'scroll', 'keydown', 'click', 'touchstart',
 ];
 
-function detectInteraction() {
-  console.log('interaction!')
+function detectInteraction(e: any) {
+  if (e.key == "Meta" || e.key == "Shift" || e.key == "Control" || e.key == "Alt") {
+    // Special keys don't count as iterating with the page (at least in Chrome).
+    return;
+  }
+
   userInteracted = true;
   for (let listener of listeners) {
     document.body.removeEventListener(listener, detectInteraction);
   }
-  if (pendingTrack != -1) {
-    playTrackImpl(pendingTrack);
-    pendingTrack = -1;
+  if (pendingTrack != null) {
+    playTrackImpl(pendingTrack.track, pendingTrack.mask);
+    pendingTrack = null;
   }
 }
 
@@ -58,10 +65,16 @@ export function init(soundMap: Int16Array, soundDetails: SoundDetails[],
 }
 
 
+// TODO(tom): playSample also needs to queue au
 export function playSample(idx: number, x: number, y: number, z: number) {
+  if (!userInteracted) {
+    console.log(`Ignoring playSample(${idx}), user hasn't interacted yet`);
+    return;
+  }
+
   idx = soundMap_[idx];
   if (idx == -1) {
-    console.log('Sample ' + idx + ' not found!');
+    console.log(`Sample ${idx} not found!`);
     return;
   }
   let dx = x - listenerTransform_[12];
@@ -80,6 +93,7 @@ export function playSample(idx: number, x: number, y: number, z: number) {
   let numSamples = details.numSamples();
   idx = details.sample + Math.floor(Math.random() * numSamples);
   samples_[idx].volume = falloff * details.volume / 32767;
+  samples_[idx].currentTime = 0;
   samples_[idx].play();
 }
 
@@ -88,24 +102,27 @@ export function playSample(idx: number, x: number, y: number, z: number) {
 export function playSecret() {
   secret_.src = 'music/13.mp3';
   secret_.play();
-};
-
-
-function playTrackImpl(idx: number) {
-  music_.src = 'music/' + idx + '.mp3';
-  music_.play();
 }
 
-/** Plays a music track with the given index.  */
-export function playTrack(idx: number) {
-  if (userInteracted) {
-    playTrackImpl(idx);
-  } else {
-    pendingTrack = idx;
-  }
-};
 
+/** Plays a music track with the given index.  */
+export function playTrack(track: number, mask: number) {
+  if (userInteracted) {
+    playTrackImpl(track, mask);
+  } else {
+    pendingTrack = {track, mask};
+  }
+}
+
+function playTrackImpl(track: number, mask:number) {
+  let oldMask = playedTrackMask[track] || 0;
+  if ((oldMask & mask) == 0) {
+    music_.src = 'music/' + track + '.mp3';
+    music_.play();
+  }
+  playedTrackMask[track] = oldMask | mask;
+}
 
 export function setListenerTransform(transform: mat4.Type) {
   mat4.setFromMat(listenerTransform_, transform);
-};
+}

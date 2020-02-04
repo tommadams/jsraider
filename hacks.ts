@@ -1,6 +1,6 @@
 import {Scene} from 'scene'
 
-export let stencilRooms = new Uint8Array(0);
+export let stencilRooms: boolean[] = [];
 
 function maybeSwapLara_(levelName: string, scene: Scene) {
   // Swap Lara's mesh when at home.
@@ -33,19 +33,22 @@ export function applyPostInitHacks(levelName: string, scene: Scene) {
   // which can cause rendering issues for these overlapping rooms.
   // To fix known bad rooms, we mask out the exact pixels that should be draw
   // by generating a stencil mask from the room's portals.
-  stencilRooms = new Uint8Array(scene.rooms.length);
   switch (levelName) {
+    // The views from several windows in Lara's house overlap each other.
     case 'GYM.PHD':
-      stencilRooms[3] = 1;
-      stencilRooms[4] = 1;
-      stencilRooms[5] = 1;
-      stencilRooms[6] = 1;
-      stencilRooms[16] = 1;
-      stencilRooms[17] = 1;
-      stencilRooms[18] = 1;
+      stencilRooms[3] = true;
+      stencilRooms[4] = true;
+      stencilRooms[5] = true;
+      stencilRooms[6] = true;
+      stencilRooms[16] = true;
+      stencilRooms[17] = true;
+      stencilRooms[18] = true;
       break;
+
+    // Part of the underwater section of City of Vilcabamba overlaps the first
+    // hub area.
     case 'LEVEL02.PHD':
-      stencilRooms[30] = 1;
+      stencilRooms[26] = true;
       break;
   }
 }

@@ -17,7 +17,7 @@ import * as debug from 'debug';
 import * as hacks from 'hacks';
 
 import {QuadBatch, TriBatch} from 'batch_builder';
-import {Lara} from 'lara';
+import {Lara} from 'controllers/lara';
 import {ProjectionShadow} from 'projection_shadow';
 import {Item, Room, Scene} from 'scene';
 import {Culler, VisibleRoom} from 'visibility';
@@ -192,22 +192,16 @@ export class Renderer {
     // Animate textures at 6fps.
     this.texAnimIndex_ = Math.floor(time * 6);
   
-    this.cameraUnderwater_ = room.underwater();
+    this.cameraUnderwater_ = room.isUnderwater();
     mat4.invert(this.view_, cameraTransform);
     mat4.getTranslation(this.eyePos_, cameraTransform);
-  
-    mat4.setPerspective(
-        this.proj_,
-        this.fieldOfViewY_,
-        aspectRatio,
-        8, 102400);
-  
+    mat4.setPerspective(this.proj_, this.fieldOfViewY_, aspectRatio, 8, 102400);
+
     mat4.setFromMat(this.prevViewProj_, this.viewProj_);
     mat4.mul(this.viewProj_, this.proj_, this.view_);
   
     // TODO(tom): support disabling culling again
-    let visibleRooms = this.culler_.cull(
-        this.fieldOfViewY_, aspectRatio, room, this.view_, this.proj_);
+    let visibleRooms = this.culler_.cull(room, this.view_, this.proj_);
     // let visibleRooms;
     // if (!debug.enabled('culling')) {
     //   visibleRooms = this.culler_.setAllVisible();
@@ -224,13 +218,13 @@ export class Renderer {
       // Set default render state.
       ctx.colorMask(true, true, true, true);
       ctx.depthMask(true);
-      ctx.enable(GL.CULL_FACE);
       ctx.enable(GL.DEPTH_TEST);
       ctx.stencilFunc(GL.ALWAYS, 0, 0xff);
       ctx.stencilOp(GL.KEEP, GL.KEEP, GL.KEEP);
       ctx.disable(GL.BLEND);
       ctx.clearColor(0, 0, 0, 1);
       ctx.clearStencil(0);
+      ctx.enable(GL.CULL_FACE);
     
       // Color & depth pass.
       ctx.enable(GL.SAMPLE_ALPHA_TO_COVERAGE);
@@ -238,7 +232,7 @@ export class Renderer {
       ctx.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT);
       ctx.colorMask(true, true, true, false);
       ctx.depthFunc(GL.LEQUAL);
-      this.drawScene_(visibleRooms);
+      this.drawScene(visibleRooms);
       ctx.disable(GL.SAMPLE_ALPHA_TO_COVERAGE);
     });
 
@@ -306,42 +300,58 @@ export class Renderer {
     // }
   }
 
-  private drawScene_(visibleRooms: VisibleRoom[]) {
+  private drawStencilPortals(room: Room, stencilValue: number) {
+    let ctx = this.ctx;
+
+    // Don't write to the depth or color buffers when drawing the stencil
+    // mask.
+    ctx.enable(GL.STENCIL_TEST);
+    ctx.colorMask(false, false, false, false);
+    ctx.depthMask(false);
+    ctx.stencilMask(0xff);
+
+    // Write the stencil value to all visible portal pixels.
+    // TODO(tom): Use something more efficient that dynamic draw.
+    ctx.stencilFunc(GL.ALWAYS, stencilValue, 0xff);
+    for (let portal of room.portals) {
+      this.portalDraw_.polygon(portal.vertices, [0, 0, 0, 1]);
+    }
+    this.portalDraw_.flush(this.viewProj_);
+
+    // Reset the render state.
+    ctx.colorMask(true, true, true, false);
+    ctx.depthMask(true);
+    ctx.stencilMask(0x00);
+
+    // Only write to pixels whose stencil value matches the portal's.
+    ctx.stencilFunc(GL.EQUAL, stencilValue, 0xff);
+  }
+
+  // TODO(tom): also need to draw moveables if their room neighbors a visible
+  // room.
+  private drawScene(visibleRooms: VisibleRoom[]) {
     let ctx = this.ctx;
   
-    ctx.enable(GL.STENCIL_TEST);
+    // Some room meshes overlap each other. For those we apply stencil tests
+    // when rendering. Replace the stencil value on z-pass only (used when
+    // drawing the portals to set up the stencil test).
+    ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
   
     // Draw visible rooms.
     for (let visibleRoomIdx = 0; visibleRoomIdx < visibleRooms.length; ++visibleRoomIdx) {
       let visibleRoom = visibleRooms[visibleRoomIdx];
-      let needStencilMask = hacks.stencilRooms[visibleRoom.room.id];
-  
-      if (debug.options.stencilPortals && needStencilMask) {
-        ctx.colorMask(false, false, false, false);
-        ctx.depthMask(false);
-        ctx.stencilFunc(GL.ALWAYS, visibleRoomIdx, 0xff);
-        ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
-        // TODO(tom): Use something more efficient that dynamic draw.
-        let portals = visibleRoom.room.portals;
-        for (let portal of visibleRoom.room.portals) {
-          this.portalDraw_.polygon(portal.vertices, [0, 0, 0, 1]);
-        }
-        this.portalDraw_.flush(this.viewProj_);
-  
-        ctx.colorMask(true, true, true, false);
-        ctx.depthMask(true);
-        ctx.stencilFunc(GL.EQUAL, visibleRoomIdx, 0xff);
-        ctx.stencilOp(GL.KEEP, GL.KEEP, GL.KEEP);
-      }
-  
-      this.drawRoom_(visibleRoom);
-  
+      let needStencilMask = (debug.options.stencilPortals && 
+                             !visibleRoom.cameraInside &&
+                             hacks.stencilRooms[visibleRoom.room.id]);
+    
       if (needStencilMask) {
-        ctx.stencilFunc(GL.ALWAYS, 0, 0xff);
+        // We can't use room.id because many levels have more than 256 rooms,
+        // but there should always be 256 or fewer rooms visible at one time.
+        this.drawStencilPortals(visibleRoom.room, visibleRoomIdx);
       }
+
+      this.drawRoom(visibleRoom, needStencilMask);
     }
-  
-    ctx.disable(GL.STENCIL_TEST);
   }
 
   private drawTriBatches_(world: mat4.Type, tint: vec4.Type, batches: TriBatch[]) {
@@ -354,9 +364,13 @@ export class Renderer {
   
     for (let batch of batches) {
       if (batch.uvs.length > 1) {
+        // Note: bindVertexBuffer only calls into GL if the vertex buffer is
+        // different.
         let frame = this.texAnimIndex_ % batch.uvs.length;
         batch.va.bindVertexBuffer(batch.uvs[frame]);
       }
+      // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
+      // a single call.
       ctx.draw(batch.va);
     }
   }
@@ -371,14 +385,18 @@ export class Renderer {
   
     for (let batch of batches) {
       if (batch.uvs.length > 1) {
+        // Note: bindVertexBuffer only calls into GL if the vertex buffer is
+        // different.
         let frame = this.texAnimIndex_ % batch.uvs.length;
         batch.va.bindVertexBuffer(batch.uvs[frame]);
       }
+      // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
+      // a single call.
       ctx.draw(batch.va);
     }
   }
   
-  private drawRoom_(visibleRoom: VisibleRoom) {
+  private drawRoom(visibleRoom: VisibleRoom, stencilStaticMeshes: boolean) {
     let ctx = this.ctx;
     let room = visibleRoom.room;
   
@@ -393,6 +411,9 @@ export class Renderer {
   
     this.disableLighting_();
   
+    if (stencilStaticMeshes) {
+      ctx.enable(GL.STENCIL_TEST);
+    }
     this.drawQuadBatches_(this.identity_, this.getTint_(room, 1), room.quadBatches);
   
     for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
@@ -403,7 +424,11 @@ export class Renderer {
           this.getTint_(room, roomStaticMesh.intensity),
           mesh.quadBatches);
     }
-  
+
+    // Don't perform stencil test for moveables because they can intersect portals.
+    if (stencilStaticMeshes) {
+      ctx.disable(GL.STENCIL_TEST);
+    }
     let moveables = visibleRoom.moveables;
     for (let item of moveables) {
       let animState = item.animState;
@@ -428,7 +453,10 @@ export class Renderer {
     ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
   
     this.disableLighting_();
-  
+
+    if (stencilStaticMeshes) {
+      ctx.enable(GL.STENCIL_TEST);
+    }
     this.drawTriBatches_(this.identity_, this.getTint_(room, 1), room.triBatches);
   
     for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
@@ -439,7 +467,11 @@ export class Renderer {
           this.getTint_(room, roomStaticMesh.intensity),
           mesh.triBatches);
     }
-  
+
+    // Don't perform stencil test for moveables because they can intersect portals.
+    if (stencilStaticMeshes) {
+      ctx.disable(GL.STENCIL_TEST);
+    }
     for (let item of moveables) {
       let animState = item.animState;
   
@@ -546,7 +578,7 @@ export class Renderer {
     // Find all the visible rooms that are underwater.
     let underwaterRooms = [];
     for (let visibleRoom of visibleRooms) {
-      if (visibleRoom.room.underwater()) {
+      if (visibleRoom.room.isUnderwater()) {
         underwaterRooms.push(visibleRoom.room);
       }
     }
@@ -585,12 +617,14 @@ export class Renderer {
         ctx.drawArrays(batch.va, GL.POINTS);
       }
     }
+
+    ctx.enable(GL.CULL_FACE);
   
     ctx.bindFramebuffer(null);
   }
 
   private getTint_(room: Room, lighting: number) {
-    if (this.cameraUnderwater_ || room.underwater()) {
+    if (this.cameraUnderwater_ || room.isUnderwater()) {
       this.tint_[0] = 0.5 * lighting;
       this.tint_[1] = lighting;
       this.tint_[2] = lighting;

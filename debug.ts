@@ -7,7 +7,7 @@ import {GL} from 'toybox/gl/constants';
 import {DynamicDraw} from 'toybox/gl/dynamic_draw';
 
 import {AnimCommand} from 'animation';
-import {Lara} from 'lara';
+import {Lara} from 'controllers/lara';
 import {Room} from 'scene';
 import {VisibleRoom} from 'visibility';
 
@@ -31,10 +31,10 @@ export let draw: DynamicDraw = null;
 export let tweak: TweakObject = null;
 
 export let options = {
-  animState: false,
+  animState: true,
   collision: false,
-  fogStart: 8192,
-  fogDensity: 0.13,
+  fogStart: 4096,
+  fogDensity: 0.065,
   lights: false,
   moveables: false,
   portals: false,
@@ -62,8 +62,8 @@ export function init(context: Context) {
       },
     },
     {prop: 'collision'},
-    {prop: 'fogStart', min: 0, max: 1024 * 64},
-    {prop: 'fogDensity', min: 0, max: 1},
+    {prop: 'fogStart', min: 0, max: 1024 * 16},
+    {prop: 'fogDensity', min: 0, max: 1, squash: 2},
     {prop: 'lights'},
     {prop: 'moveables'},
     {prop: 'portals'},
@@ -91,39 +91,44 @@ function drawOutlinePoly(verts: vec3.Type[], col: number[]) {
   }
 }
 
-function drawAnimState(lara: Lara) {
-  if (lara.item.animState == null) {
-    return;
-  }
+function drawAnimState(cameraRoom: Room, lara: Lara) {
+  // let item = (window as any)['app'].scene.items[10];
+  // let animState = item.animState;
+  // let parts = [];
+  // let anim = animState.anim;
+  // parts.push(
+  //   `idx:${(animState.frameIdx - anim.firstFrame)} ofs:${animState.frameOfs.toFixed(2)}`,
+  //   anim.toString(), '', 'Commands:');
+  // for (let command of anim.commands) {
+  //   parts.push(
+  //       `op: ${AnimCommand.Op[command.op]} [${command.operands.join(', ')}]`);
+  // }
+
   let animState = lara.item.animState;
-  let parts = [lara.debugString()];
-
-  let numFrames = 1 + animState.anim.lastFrame - animState.anim.firstFrame;
-  let frameNum = animState.frameIdx - animState.anim.firstFrame;
-  let onLeftFoot = frameNum < numFrames / 2;
-  parts.push('onLeftFoot: ' + onLeftFoot);
-
+  let parts = [`cam room:${cameraRoom.id}`, lara.toString()];
   let anim = animState.anim;
   parts.push(
-    'idx:' + (animState.frameIdx - anim.firstFrame) + ' ofs:'+ animState.frameOfs,
+    `idx:${(animState.frameIdx - anim.firstFrame)} ofs:${animState.frameOfs.toFixed(2)}`,
     anim.toString(), '', 'Commands:');
   for (let command of anim.commands) {
     parts.push(
         `op: ${AnimCommand.Op[command.op]} [${command.operands.join(', ')}]`);
   }
 
-  log.innerHTML = parts.join('\n');
+  log.innerText = parts.join('\n');
 }
 
 function drawPortals(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
+  ctx.disable(GL.DEPTH_TEST);
   for (let visibleRoom of visibleRooms) {
     for (let portal of visibleRoom.room.portals) {
       // Portals face away from the room, so we have to reverse the winding order.
       let v = portal.vertices;
-      draw.polygon([v[3], v[2], v[1], v[0]], [1, 0.5, 0, 0.4]);
+      draw.polygon([v[3], v[2], v[1], v[0]], [0, 0, 0.8, 0.3]);
     }
   }
   draw.flush(viewProj, 0.1);
+  ctx.enable(GL.DEPTH_TEST);
 }
 
 function drawLights(room: Room, viewProj: mat4.Type) {
@@ -156,22 +161,11 @@ function drawLaraCollisions(lara: Lara, viewProj: mat4.Type) {
 }
 
 function drawSprites(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
-  /*
-  let transform = mat4.create();
-  for (let item of app.scene_.items) {
-    mat4.makeRotateY(transform, item.rotation[1]);
-    mat4.setColumnValues(
-        transform, 3,
-        item.position[0], item.position[1], item.position[2], 1);
-    this.debugDraw_.drawAxis(transform, 256);
-  }
-  */
-
   let transform = mat4.newZero();
   for (let visibleRoom of visibleRooms) {
     for (let item of visibleRoom.spriteSequences) {
       mat4.setRotateY(transform, item.rotation[1]);
-      mat4.setColValues(
+      mat4.setRowValues(
           transform, 3,
           item.position[0], item.position[1], item.position[2], 1);
       draw.axis(transform, 512);
@@ -310,7 +304,7 @@ export function render(
   ctx.enable(GL.BLEND);
 
   if (options.animState) {
-    drawAnimState(lara);
+    drawAnimState(cameraRoom, lara);
   }
   if (options.collision) {
     drawCollision(cameraRoom, viewProj);

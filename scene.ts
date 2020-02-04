@@ -1,16 +1,22 @@
-import * as mat4 from 'toybox/math/mat4'
-import * as vec2 from 'toybox/math/vec2'
-import * as vec3 from 'toybox/math/vec3'
-import {Animation, AnimCommand, AnimDispatch, AnimState, Frame, StateChange, parseFrames} from 'animation'
-import {Context} from 'toybox/gl/context'
-import {TextureAtlas} from 'texture_atlas'
-import {VertexArray} from 'toybox/gl/vertex_array'
-import {Rect} from 'toybox/math/rect'
-import {BatchBuilder} from 'batch_builder'
-import {GL} from 'toybox/gl/constants'
-import {Stream} from 'toybox/util/stream'
-import {QuadBatch, TriBatch} from 'batch_builder'
-import * as hacks from 'hacks'
+import * as mat4 from 'toybox/math/mat4';
+import * as vec2 from 'toybox/math/vec2';
+import * as vec3 from 'toybox/math/vec3';
+import {Animation, AnimCommand, AnimDispatch, AnimState, Frame, StateChange, parseFrames} from 'animation';
+import {Context} from 'toybox/gl/context';
+import {TextureAtlas} from 'texture_atlas';
+import {VertexArray} from 'toybox/gl/vertex_array';
+import {Rect} from 'toybox/math/rect';
+import {BatchBuilder} from 'batch_builder';
+import {GL} from 'toybox/gl/constants';
+import {Stream} from 'toybox/util/stream';
+
+import {Block} from 'controllers/block';
+import {Controller} from 'controllers/controller';
+import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
+import {Switch} from 'controllers/switch';
+import {QuadBatch, TriBatch} from 'batch_builder';
+import * as hacks from 'hacks';
+import * as audio from 'audio';
 
 export const V1 = 0x20;
 
@@ -24,13 +30,22 @@ export enum ItemType {
   CROCODILE_SWIM = 11,
   LION_MALE = 12,
   LION_FEMALE = 13,
-
+  PANTHER = 14,
   GORILLA = 15,
   RAT = 16,
   RAT_SWIM = 17,
   T_REX = 18,
   VELOCIRAPTOR = 19,
+  ATLANTEAN_MUTANT = 20,
 
+  LARSON = 27,
+  PIERRE = 28,
+  SKATEBOARD = 29,
+  SKATEBOARD_KID = 30,
+  COWBOY = 31,
+  KIN_KADE = 32,
+  WINGED_NATLA = 33,
+  TORSO_BOSS = 34,
   CRUMBLE_FLOOR = 35,
   SWINGING_AXE = 36,
 
@@ -40,6 +55,7 @@ export enum ItemType {
   BLOCK_2 = 49,
 
   SWITCH = 55,
+  UNDERWATER_SWITCH = 56,
 
   DOOR_1 = 57,
   DOOR_2 = 58,
@@ -48,12 +64,60 @@ export enum ItemType {
   BIG_DOOR_1 = 61,
   BIG_DOOR_2 = 62,
 
+  TRAP_DOOR_1 = 65,
+  TRAP_DOOR_2 = 66,
+
   BRIDGE_FLAT = 68,
   BRIDGE_SLOPE_1 = 69,
-  BRIDGE_SLOPE_2 = 70
+  BRIDGE_SLOPE_2 = 70,
+  PASSPORT_OPENING = 71,
+  COMPASS = 72,
+  LARAS_HOME_PHOTO = 73,
+  ANIMATING_1 = 74,
+  ANIMATING_2 = 75,
+  ANIMATING_3 = 76,
+  CUTSCENE_ACTOR_1 = 77,
+  CUTSCENE_ACTOR_2 = 78,
+  CUTSCENE_ACTOR_3 = 79,
+  CUTSCENE_ACTOR_4 = 80,
+  PASSPORT_CLOSED = 81,
+  UNUSED_MAP = 82,
+  SAVE_CRYSTAL = 83,
+  PISTOLS = 84,
+  SHOTGUN = 85,
+  MAGNUMS = 86,
+  UZIS = 87,
+  PISTOL_AMMO = 88,
+  SHOTGUN_AMMO = 89,
+  MAGNUM_AMMO = 90,
+  UZI_AMMO = 91,
+  UNUSED_EXPLOSIVE = 92,
+  SMALL_MEDIPACK = 93,
+  LARGE_MEDIPACK = 94,
+  // SUNGLASSES = 95,
+  // CASETTE_PLAYER = 96,
+  // DIRECTION_KEYS = 97,
+  // FLASHLIGHT = 98,
+  // PISTOLS = 99,
+  // SHOTGUN = 100,
+  // MAGNUMS = 101,
+  // UZIS = 102,
+
+  PUZZLE_1 = 110,
+  PUZZLE_2 = 111,
+  PUZZLE_3 = 112,
+  PUZZLE_4 = 113,
+
+  KEY_1 = 129,
+  KEY_2 = 130,
+  KEY_3 = 131,
+  KEY_4 = 132,
+
+  CAMERA_TARGET = 169,
+  WATERFALL_SPLASH = 170,
 }
 
-function convertLight_(l: number) {
+function convertLight(l: number) {
   return 2 - l / 4096;
 }
 
@@ -119,7 +183,7 @@ export class SceneCamera {
 }
 
 export class Item {
-  id: number;
+  type: number;
   position: vec3.Type;
   rawRotation: number;
   rotation: vec3.Type;
@@ -128,11 +192,12 @@ export class Item {
   moveable: Moveable = null;
   animState: AnimState = null;
   spriteSequence: SpriteSequence = null;
+  active = true;
   renderable = false;
   room: Room;
 
   constructor(rooms: Room[], stream: Stream) {
-    this.id = stream.readUint16();
+    this.type = stream.readUint16();
 
     let roomIdx = stream.readUint16();
 
@@ -147,7 +212,7 @@ export class Item {
     if (this.intensity == -1) {
       this.intensity = 1;
     } else {
-      this.intensity = convertLight_(this.intensity);
+      this.intensity = convertLight(this.intensity);
     }
     this.flags = stream.readUint16();
 
@@ -155,20 +220,20 @@ export class Item {
   }
 
   init(scene: Scene) {
-    this.moveable = scene.moveables.find(a => { return a.id == this.id; });
+    this.moveable = scene.moveables.find(a => a.type == this.type) || null;
     if (this.moveable != null) {
       this.animState = new AnimState(
           scene.animations, this.moveable.animId, this.position, this.rotation);
     }
 
-    this.spriteSequence = scene.spriteSequences.find(a => { return a.id == this.id; });
+    this.spriteSequence = scene.spriteSequences.find(a => a.type == this.type) || null;
 
     if (this.moveable != null && this.spriteSequence != null) {
       throw new Error(
-          `Item ${this.id} has both a moveable and a sprite sequence`);
+          `Item ${this.type} has both a moveable and a sprite sequence`);
     } else if (this.moveable == null && this.spriteSequence == null) {
       throw new Error(
-          `Item ${this.id} has neither a moveable nor a sprite sequence`);
+          `Item ${this.type} has neither a moveable nor a sprite sequence`);
     }
 
     if (this.moveable != null) {
@@ -176,11 +241,60 @@ export class Item {
     } else {
       this.renderable = true;
     }
+
+    if (this.room.id == 24) {
+      console.log(ItemType[this.type], this);
+    }
   }
 
+  isInvisible() {
+    return (this.flags & 0x100) != 0;
+  }
+
+  activationMask() {
+    return (this.flags >> 8) & 0x3e;
+  }
+
+  // TODO(tom): make look up tables for these.
   isBlock() {
-    return (this.id == ItemType.BLOCK_1 ||
-            this.id == ItemType.BLOCK_2);
+    return (this.type == ItemType.BLOCK_1 ||
+            this.type == ItemType.BLOCK_2);
+  }
+
+  isBridge() {
+    return (this.type == ItemType.BRIDGE_FLAT ||
+            this.type == ItemType.BRIDGE_SLOPE_1 ||
+            this.type == ItemType.BRIDGE_SLOPE_2);
+  }
+
+  isSwitch() {
+    return (this.type == ItemType.SWITCH ||
+            this.type == ItemType.UNDERWATER_SWITCH);
+  }
+
+  isPickup() {
+    switch (this.type) {
+      case ItemType.SHOTGUN:
+      case ItemType.MAGNUMS:
+      case ItemType.UZIS:
+      case ItemType.PISTOL_AMMO:
+      case ItemType.SHOTGUN_AMMO:
+      case ItemType.MAGNUM_AMMO:
+      case ItemType.UZI_AMMO:
+      case ItemType.UNUSED_EXPLOSIVE:
+      case ItemType.SMALL_MEDIPACK:
+      case ItemType.LARGE_MEDIPACK:
+      case ItemType.PUZZLE_1:
+      case ItemType.PUZZLE_2:
+      case ItemType.PUZZLE_3:
+      case ItemType.PUZZLE_4:
+      case ItemType.KEY_1:
+      case ItemType.KEY_2:
+      case ItemType.KEY_3:
+      case ItemType.KEY_4:
+        return true;
+    }
+    return false;
   }
 }
 
@@ -230,7 +344,7 @@ export class Mesh {
       numVertices = -numVertices;
       this.colors = new Float32Array(3 * numVertices);
       for (let i = 0; i < numVertices; ++i) {
-        let light = convertLight_(stream.readUint16());
+        let light = convertLight(stream.readUint16());
         this.colors[i * 3] = light;
         this.colors[i * 3 + 1] = light;
         this.colors[i * 3 + 2] = light;
@@ -280,7 +394,7 @@ export class Mesh {
 }
 
 export class Moveable {
-  id: number;
+  type: number;
   meshCount: number;
   firstMesh: number;
   meshTree: number;
@@ -294,7 +408,7 @@ export class Moveable {
   dynamicLighting = false;
 
   constructor(stream: Stream) {
-    this.id = stream.readUint32();
+    this.type = stream.readUint32();
     this.meshCount = stream.readUint16();
     this.firstMesh = stream.readUint16();
     this.meshTree = stream.readUint32();
@@ -381,20 +495,16 @@ export class AtlasObjectTexture {
 }
 
 export class Portal {
-  adjoiningRoomIdx: number;
+  adjoiningRoomId: number;
   normal: Int16Array;
   vertices = new Array<vec3.Type>(4);
 
   constructor(stream: Stream, roomX: number, roomZ: number) {
-    this.adjoiningRoomIdx = stream.readUint16();
+    this.adjoiningRoomId = stream.readUint16();
     this.normal = stream.readInt16Array(3);
     for (let i = 0; i < 4; ++i) {
       let src = stream.readInt16Array(3);
       let dst = vec3.newFromValues(src[0] + roomX, src[1], src[2] + roomZ);
-      // POS SCALE
-      // dst[0] /= 1024;
-      // dst[1] /= 1024;
-      // dst[2] /= 1024;
       this.vertices[i] = dst;
     }
   }
@@ -411,7 +521,7 @@ export class RoomStaticMesh {
   constructor(stream: Stream) {
     this.position = stream.readInt32Array(3);
     this.rotation = stream.readUint16() * Math.PI / 32768;
-    this.intensity = convertLight_(stream.readInt16());
+    this.intensity = convertLight(stream.readInt16());
     this.id = stream.readUint16();
     this.staticMesh = null;
     this.transform = mat4.newRotateY(this.rotation);
@@ -422,7 +532,7 @@ export class RoomStaticMesh {
 }
 
 export class FloorFunc {
-  opcodes: number[] = [];
+  actions: number[] = [];
   constructor(public type: number, public sub: number) {
     if (type < 0 || type >= FloorFunc.Type.NUM_TYPES) {
       throw new Error('Floor data function type out of range: ' + type);
@@ -443,34 +553,39 @@ export namespace FloorFunc {
     NUM_TYPES = 7,
   }
 
-  export enum TriggerFunc {
-    ACTIVATE = 0,
-    IF_ON_GROUND_ACTIVATE = 1,
-    IF_0_ON_ACTIVATE_1_ELSE_DEACTIVATE_1 = 2,
-    IF_0_ON_ACTIVATE_1 = 3,
-    IF_0_PICKED_UP_ACTIVATE_1 = 4,
-    IF_0_IN_SECTOR_ACTIVATE_1_ELSE_DEACTIVATE_1 = 5,
-    IF_ON_GROUND_DEACTIVATE = 6,
-    UNKNOWN = 7,
-    IF_NOT_ON_GROUND_ACTIVATE = 8,
-    DEACTIVATE = 8,
-  }
-
   export enum Op {
     ITEM = 0,
     CAMERA_SWITCH = 1,
     UNDERWATER_CURRENT = 2,
-    ALTERNATE_ROOM = 3,
-    ROOM_FLAGS_0 = 4,
-    ROOM_FLAGS_1 = 5,
+    FLIP_MAP = 3,
+    FLIP_ON = 4,
+    FLIP_OFF = 5,
     LOOK_AT = 6,
     END_LEVEL = 7,
     PLAY_MUSIC = 8,
-    CLOCK_CONTROL = 9,
+    FLIP_EFFECT = 9,
     SECRET = 10,
-
-    NUM_OPS = 11,
   }
+}
+
+export enum TriggerType {
+  TRIGGER_ON = 0,
+  PAD_ON = 1,
+  SWITCH = 2,
+  KEY = 3,
+  PICK_UP = 4,
+  HEAVY_TRIGGER = 5,
+  PAD_OFF = 6,
+  COMBAT = 7,
+  DUMMY = 8,
+  TRIGGER_OFF = 9,
+  HEAVY_SWITCH = 10,
+  HEAVY_TRIGGER_OFF = 11,
+  MONKEY = 12,
+  SKELETON = 13,
+  TIGHTROPE = 14,
+  CRAWL = 15,
+  CLIMB = 16,
 }
 
 export class FloorData {
@@ -507,15 +622,39 @@ export class Sector {
    */
   constructor(stream: Stream, public room: Room,
               public i: number, public j: number) {
-    let x = i * 1024;
-    let z = j * 1024;
-
     this.floorDataIdx = stream.readUint16();
     this.boxIdx = stream.readUint16();
     this.roomBelowIdx = stream.readUint8();
     this.floor = stream.readInt8() * 256;
     this.roomAboveIdx = stream.readUint8();
     this.ceiling = stream.readInt8() * 256;
+  }
+
+  getTriggers(predicate: (f: FloorFunc) => boolean) {
+    let result = [];
+    for (let func of this.floorData.funcs) {
+      if (func.type != FloorFunc.Type.TRIGGER) {
+        continue;
+      }
+      if (predicate(func)) {
+        result.push(func);
+      }
+    }
+    return result;
+  }
+
+  getTrigger(triggerType: TriggerType) {
+    let result: FloorFunc = null;
+    for (let func of this.floorData.funcs) {
+      if (func.type == FloorFunc.Type.TRIGGER &&
+          func.sub == triggerType) {
+        if (result != null) {
+          throw new Error(`found multiple triggers with the same type`);
+        }
+        result = func;
+      }
+    }
+    return result;
   }
 
   /** Returns the sector that contains the real floor (not a portal). */
@@ -673,9 +812,9 @@ export class Sector {
 
       // Figure out the bridge slope based on its type and rotation.
       let slope = 0;
-      if (bridge.id == ItemType.BRIDGE_SLOPE_1) {
+      if (bridge.type == ItemType.BRIDGE_SLOPE_1) {
         slope = 256;
-      } else if (bridge.id == ItemType.BRIDGE_SLOPE_2) {
+      } else if (bridge.type == ItemType.BRIDGE_SLOPE_2) {
         slope = 512;
       }
 
@@ -747,13 +886,13 @@ export class Sector {
 }
 
 export class SpriteSequence {
-  id: number;
+  type: number;
   negativeLength: number;
   offset: number;
   batches: SpriteBatch[] = [];
 
   constructor(stream: Stream) {
-    this.id = stream.readUint32();
+    this.type = stream.readUint32();
     this.negativeLength = stream.readInt16();
     this.offset = stream.readInt16();
   }
@@ -850,6 +989,7 @@ export class Textile {
 }
 
 export class SpriteBatch {
+  // TODO(tom): interleave vertex buffers
   va: VertexArray;
 
   constructor(ctx: Context, positions: vec3.Type[],
@@ -891,16 +1031,11 @@ export class SpriteBatch {
           ox0, oy0,   ox1, oy1,   ox0, oy1);
     }
 
-    // POS SCALE
-    // for (let i = 0; i < pos.length; ++i) {
-    //   pos[i] /= 1024;
-    // }
-
     this.va = ctx.newVertexArray({
-      positions: {size: 3, data: new Float32Array(pos)},
-      colors: {size: 3, data: new Float32Array(col)},
-      uvs: {size: 2, data: new Float32Array(uvs)},
-      offsets: {size: 2, data: new Float32Array(off)},
+      position: {size: 3, data: new Float32Array(pos)},
+      color: {size: 3, data: new Float32Array(col)},
+      uv: {size: 2, data: new Float32Array(uvs)},
+      offset: {size: 2, data: new Float32Array(off)},
     });
   }
 }
@@ -949,7 +1084,7 @@ export class Room {
       this.positions[i * 3] = this.x + stream.readInt16();
       this.positions[i * 3 + 1] = stream.readInt16();
       this.positions[i * 3 + 2] = this.z + stream.readInt16();
-      let light = convertLight_(stream.readUint16());
+      let light = convertLight(stream.readUint16());
       this.colors[i * 3] = light;
       this.colors[i * 3 + 1] = light;
       this.colors[i * 3 + 2] = light;
@@ -990,7 +1125,7 @@ export class Room {
     }
 
     this.originalAmbientIntensity = stream.readUint16();
-    this.ambientIntensity = convertLight_(this.originalAmbientIntensity);
+    this.ambientIntensity = convertLight(this.originalAmbientIntensity);
 
     num = stream.readUint16();
     this.lights = new Array(num);
@@ -1216,7 +1351,7 @@ export class Room {
     return this.sectorTable[i + j * this.sectorTableWidth];
   }
 
-  underwater() { return (this.flags & 1) == 1; }
+  isUnderwater() { return (this.flags & 1) == 1; }
 }
 
 export interface TextureData {
@@ -1251,6 +1386,7 @@ export class Scene {
   zones: Uint16Array;
   animatedTextures: AnimatedTexture[];
   items: Item[];
+  controllers: Controller[];
   palette: Uint8Array;
   cinematicFrames: CinematicFrame[];
   demoData: Uint8Array;
@@ -1262,112 +1398,58 @@ export class Scene {
   floorData: FloorData[];
   atlasTex: TextureData;
   lightTex: TextureData;
+  lara: Lara;
+  secretsFound: boolean[] = [];
 
-  constructor(levelName: string, buf: ArrayBuffer, ctx: Context) {
+  constructor(public name: string, buf: ArrayBuffer, ctx: Context) {
     let stream = new Stream(buf);
     this.version = stream.readUint32();
     if (this.version != V1) {
       throw new Error('Version 0x' + this.version.toString(16) + ' != 0x20');
     }
 
-    console.log('textiles', stream.getOfs());
     this.textiles = this.readArray32_(stream, Textile);
 
     stream.readUint32();  // ???
 
-    console.log('rooms', stream.getOfs());
     this.rooms = this.readArray16_(stream, Room);
-
-    console.log('floor', stream.getOfs());
     this.rawFloorData = stream.readUint16Array(stream.readUint32());
-
-    console.log('meshes', stream.getOfs());
     this.meshes = this.readMeshes_(stream);
-
-    console.log('animations', stream.getOfs());
     this.animations = this.readArray32_(stream, Animation);
-
-    console.log('stateChanges', stream.getOfs());
     this.stateChanges = this.readArray32_(stream, StateChange);
-
-    console.log('animDispatches', stream.getOfs());
     this.animDispatches = this.readArray32_(stream, AnimDispatch);
-
-    console.log('animCommands', stream.getOfs());
     this.animCommands = stream.readInt16Array(stream.readUint32());
-
-    console.log('meshTrees', stream.getOfs());
     this.meshTrees = stream.readInt32Array(stream.readUint32());
-
-    console.log('frames', stream.getOfs());
     this.rawFrames = stream.readUint16Array(stream.readUint32());
-
-    console.log('moveables', stream.getOfs());
     this.moveables = this.readArray32_(stream, Moveable);
-
-    console.log('staticMeshes', stream.getOfs());
     this.staticMeshes = this.readArray32_(stream, StaticMesh);
-
-    console.log('objectTextures', stream.getOfs());
     this.objectTextures = this.readArray32_(stream, ObjectTexture);
-
-    console.log('spriteTextures', stream.getOfs());
     this.spriteTextures = this.readArray32_(stream, SpriteTexture);
-
-    console.log('spriteSequences', stream.getOfs());
     this.spriteSequences = this.readArray32_(stream, SpriteSequence);
-
-    console.log('cameras', stream.getOfs());
     this.cameras = this.readArray32_(stream, SceneCamera);
-
-    console.log('soundSources', stream.getOfs());
     this.soundSources = this.readArray32_(stream, SoundSource);
-
-    console.log('boxes', stream.getOfs());
     this.boxes = this.readArray32_(stream, Box);
-
-    console.log('overlaps', stream.getOfs());
     this.overlaps = stream.readUint16Array(stream.readUint32());
-
-    console.log('zones', stream.getOfs());
     this.zones = stream.readUint16Array(6 * this.boxes.length);
-
-    console.log('animatedTextures', stream.getOfs());
     this.animatedTextures = this.readAnimatedTextures_(stream);
-
-    console.log('items', stream.getOfs());
     this.items = this.readArray32_(stream, Item.bind(null, this.rooms));
 
     // Skip the light map.
-    console.log('lightMap', stream.getOfs());
     stream.readUint8Array(32 * 256);
 
-    console.log('palette', stream.getOfs());
     this.palette = stream.readUint8Array(3 * 256);
-
-    console.log('cinematicFrames', stream.getOfs());
     this.cinematicFrames = this.readArray16_(stream, CinematicFrame);
-
-    console.log('demoData', stream.getOfs());
     this.demoData = stream.readUint8Array(stream.readUint16());
-
-    console.log('soundMap', stream.getOfs());
     this.soundMap = stream.readInt16Array(256);
-
-    console.log('soundDetails', stream.getOfs());
     this.soundDetails = this.readArray32_(stream, SoundDetails);
-
-    console.log('samples', stream.getOfs());
     this.samples = stream.readUint8Array(stream.readUint32());
-
-    console.log('sampleIndices', stream.getOfs());
     this.sampleIndices = stream.readUint32Array(stream.readUint32());
 
     if (stream.getOfs() != stream.getLength()) {
       throw new Error('Didn\'t read all the data :(');
     }
 
-    hacks.applyPostLoadHacks(levelName, this);
+    hacks.applyPostLoadHacks(name, this);
 
     this.convertPalette_();
 
@@ -1459,6 +1541,42 @@ export class Scene {
       }
     }
     */
+
+    this.createControllers();
+  }
+
+  runFloorFunc(func: FloorFunc, begin: number, triggerState: number) {
+    let activationMask = func.actions[0] >> 9;
+    let once = (func.actions[0] >> 8) & 1;
+    for (let i = begin; i < func.actions.length; ++i) {
+      let action = (func.actions[i] >> 10) & 0xf;
+      let parameter = func.actions[i] & 0x3ff;
+      switch (action) {
+        case FloorFunc.Op.CAMERA_SWITCH:
+          let parameter2 = func.actions[i++];
+          break;
+
+        case FloorFunc.Op.ITEM:
+          if (parameter < this.controllers.length) {
+            this.controllers[parameter].changeState(triggerState);
+          } else {
+            console.log(`Activate item index ${parameter} out of range`);
+          }
+          break;
+
+        case FloorFunc.Op.PLAY_MUSIC:
+          let mask = (func.actions[0] >> 8) & 0x3f;
+          audio.playTrack(parameter, mask);
+          break;
+
+        case FloorFunc.Op.SECRET:
+          if (!this.secretsFound[parameter]) {
+            this.secretsFound[parameter] = true;
+            audio.playSecret();
+          }
+          break;
+      }
+    }
   }
 
   private readMeshes_(stream: Stream) {
@@ -1568,8 +1686,6 @@ export class Scene {
   }
 
   private parseFloorData_() {
-    let fft = FloorFunc.Type;
-
     let decodeSlope = function(data: number, result: vec2.Type) {
       let x = data & 0xff;
       let z = (data >> 8) & 0xff;
@@ -1600,25 +1716,25 @@ export class Scene {
         let type = data & 0xff;
         let sub = (data >> 8) & 0x7f;
 
-        if (type == fft.CEILING_SLOPE) {
+        if (type == FloorFunc.Type.CEILING_SLOPE) {
           decodeSlope(this.rawFloorData[idx++], parsed.ceilingSlope);
-        } else if (type == fft.FLOOR_SLOPE) {
+        } else if (type == FloorFunc.Type.FLOOR_SLOPE) {
           decodeSlope(this.rawFloorData[idx++], parsed.floorSlope);
-        } else if (type == fft.PORTAL_SECTOR) {
+        } else if (type == FloorFunc.Type.PORTAL_SECTOR) {
           let roomIdx = this.rawFloorData[idx++];
           if (roomIdx != -1) {
             parsed.portal = this.rooms[roomIdx];
           }
-        } else if (type != fft.NONE) {
+        } else if (type != FloorFunc.Type.NONE) {
           let func = new FloorFunc(type, sub);
           switch (type) {
-            case fft.KILL:
-            case fft.CLIMBABLE_WALL:
-              // No opcodes.
+            case FloorFunc.Type.KILL:
+            case FloorFunc.Type.CLIMBABLE_WALL:
+              // No actions.
               break;
 
-            case fft.TRIGGER:
-              // TRIGGER has a sequence of opcodes.
+            case FloorFunc.Type.TRIGGER:
+              // TRIGGER has a sequence of actions.
               // The last one in the sequence has its top bit set.
               do {
                 if (idx >= this.rawFloorData.length) {
@@ -1627,7 +1743,7 @@ export class Scene {
                       ' >= ' + this.rawFloorData.length);
                 }
                 // Strip the 'more data' bit from the opcode.
-                func.opcodes.push(this.rawFloorData[idx] & 0x7fff);
+                func.actions.push(this.rawFloorData[idx] & 0x7fff);
               } while ((this.rawFloorData[idx++] & 0x8000) == 0);
               break;
 
@@ -1636,17 +1752,15 @@ export class Scene {
           }
 
           // Check if the sector has a bridge piece.
-          if (type == fft.TRIGGER &&
-              sub == FloorFunc.TriggerFunc.ACTIVATE) {
-            for (let i = 1; i < func.opcodes.length; ++i) {
-              let opcode = func.opcodes[i];
+          if (type == FloorFunc.Type.TRIGGER &&
+              sub == TriggerType.TRIGGER_ON) {
+            for (let i = 1; i < func.actions.length; ++i) {
+              let opcode = func.actions[i];
               let op = (opcode >> 10) & 0xf;
               let operand = opcode & 0x3ff;
               if (op == FloorFunc.Op.ITEM &&
                   operand < this.items.length &&
-                  (this.items[operand].id == ItemType.BRIDGE_FLAT ||
-                   this.items[operand].id == ItemType.BRIDGE_SLOPE_1 ||
-                   this.items[operand].id == ItemType.BRIDGE_SLOPE_2)) {
+                  this.items[operand].isBridge()) {
                 parsed.bridge = this.items[operand];
               }
             }
@@ -1706,7 +1820,7 @@ export class Scene {
    */
   private create32bitTiles_() {
     /*
-    let pushTex = function(width, height, data) {
+    let pushTex = function(width: number, height: number, data: Uint8Array) {
       let canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -1877,5 +1991,47 @@ export class Scene {
       array[i] = new ctor(stream);
     }
     return array;
+  }
+
+  private createControllers() {
+    this.controllers = [];
+    for (let item of this.items) {
+      if (item.animState == null) {
+        this.controllers.push(null);
+        continue;
+      }
+
+      item.animState.anim.getFrame(
+          item.animState.frameIdx, item.animState.frameOfs, item.animState.frame);
+      item.animState.setMeshTransforms(
+          item.moveable.meshCount, item.moveable.meshTree, this.meshTrees);
+      switch (item.type) {
+        case ItemType.LARA:
+          this.lara = new Lara(item, this);
+          this.controllers.push(this.lara);
+          break;
+  
+        case ItemType.BLOCK_1:
+        case ItemType.BLOCK_2:
+          this.controllers.push(new Block(item, this));
+          break;
+
+        case ItemType.SWITCH:
+        case ItemType.UNDERWATER_SWITCH:
+          this.controllers.push(new Switch(item, this));
+          break;
+
+        default:
+          // TODO(tom): do we really need to create a controller for every
+          // single item? That's a lot of items with update methods that don't
+          // do anything.
+          this.controllers.push(new Controller(item, this));
+          break;
+      }
+    }
+
+    if (this.lara == null) {
+      throw 'Couldn\'t find Lara :(';
+    }
   }
 }

@@ -178,6 +178,19 @@ export class AnimState {
     return hasState;
   }
 
+  toString() {
+    let parts = [];
+    let anim = this.anim;
+    parts.push(
+      `idx:${(this.frameIdx - anim.firstFrame)} ofs:${this.frameOfs.toFixed(2)}`,
+      anim.toString(), '', 'Commands:');
+    for (let command of anim.commands) {
+      parts.push(
+          `op: ${AnimCommand.Op[command.op]} [${command.operands.join(', ')}]`);
+    }
+    return parts.join('\n');
+  }
+
   /**
    * Trigger any animation commands in the frame range [begin, end).
    */
@@ -326,9 +339,16 @@ export namespace AnimState {
 
 export class Animation {
   id = -1;
+  
+  // Offset to start of shared frames array of the first frame.
   frameOffset: number;
+
+  // Engine ticks per frame (30Hz).
   frameRate: number;
+
+  // Number of uint16s used by this animation.
   frameSize: number;
+
   state: State;
   speed: number;
   accel: number;
@@ -351,7 +371,7 @@ export class Animation {
     this.frameOffset = stream.readUint32();
     this.frameRate = stream.readUint8();
     this.frameSize = stream.readUint8();
-    this.state = /** @type {State} */(stream.readUint16());
+    this.state = stream.readUint16();
     this.speed = stream.readInt32() / 65536;
     this.accel = stream.readInt32() / 65536;
     this.firstFrame = stream.readUint16();
@@ -835,7 +855,8 @@ export enum AnimationId {
 
   TREAD_WATER_FORWARD = 118,
   TREAD_WATER_TO_SWIM = 119,
-  PREPARE_TO_PUSH = 120,
+  PREPARE_PUSH = 120,
+  RELEASE_PUSH = 121,
 
   DIE_SWIMMING = 124,
 
@@ -868,8 +889,7 @@ export enum AnimationId {
   START_SWAN_DIVE_START_L = 156,
   START_SWAN_DIVE_START_R = 157,
   SWAN_DIVE = 158,
-
-  HANDSTAND_PULL_UP = 159
+  HANDSTAND_PULL_UP = 159,
 }
 
 export namespace Animation {

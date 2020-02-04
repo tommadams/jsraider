@@ -6,6 +6,7 @@ import {Item, Scene} from 'scene'
 import {resolveRoomByPosition} from 'collision'
 
 export class Controller {
+  private pendingState = -1;
   protected animStateCommand = new AnimState.Command();
 
   constructor(public item: Item, public scene: Scene) {}
@@ -13,6 +14,12 @@ export class Controller {
   update(dt: number) {
     let item = this.item;
     let animState = item.animState;
+    let prevFrameIdx = animState.frameIdx;
+
+    if (this.pendingState != -1 &&
+        animState.tryChangeState(this.pendingState)) {
+      this.pendingState = -1;
+    }
 
     // Advance the animation state.
     animState.advance(dt, this.animStateCommand);
@@ -33,5 +40,17 @@ export class Controller {
         animState.frameIdx, animState.frameOfs, animState.frame);
     animState.setMeshTransforms(
         item.moveable.meshCount, item.moveable.meshTree, this.scene.meshTrees);
+    if (animState.frameIdx != prevFrameIdx) {
+      this.onAnimFrameChange();
+    }
   }
+
+  changeState(state: number) {
+    let animState = this.item.animState;
+    if (!animState.tryChangeState(state)) {
+      this.pendingState = state;
+    }
+  }
+
+  protected onAnimFrameChange() {}
 }

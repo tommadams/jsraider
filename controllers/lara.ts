@@ -6,8 +6,9 @@ import * as audio from 'audio';
 import {AnimationId} from 'animation';
 import {BlockState} from 'block';
 import {Intersection, moveCharacter, resolveRoomByGrid, resolveRoomByPosition} from 'collision';
-import {Controller} from 'controller';
-import {Item, ItemType, FloorFunc, Room, Scene, Sector} from 'scene';
+import {Controller} from 'controllers/controller';
+import {Switch, isSwitch} from 'controllers/switch';
+import {Item, ItemType, FloorFunc, Room, Scene, Sector, TriggerType} from 'scene';
 import {Input} from 'input';
 import {SlidingConstraints} from 'sliding_constraints';
 import {State} from 'state';
@@ -15,6 +16,8 @@ import {State} from 'state';
 const GRAVITY = 180;
 const FPS = 30;
 const HANG_OFFSET = 730;
+
+const MAX_PITCH = 0.45 * Math.PI;
 
 const FALL_SPEED = 150;
 const SCREAM_SPEED = 185;
@@ -29,14 +32,12 @@ const TURN_WATER_SLOW = Math.PI * 2 / 3;
 const VAULT_MIN_HEIGHT = 512 - 128;
 const VAULT_LOW_HEIGHT = 512 + 128;
 const VAULT_MEDIUM_HEIGHT = 768 + 128;
-const VAULT_HIGH_HEIGHT = 1792;
+const VAULT_HIGH_HEIGHT = 1792 + 128;
 
 const STEP_UP_DOWN_SPEED = 2048;
 
-console.log('SWAN DIVE TO SWIM TRANSITION IS BROKEN');
-console.log('SWAN DIVE TO SWIM TRANSITION IS BROKEN');
-console.log('SWAN DIVE TO SWIM TRANSITION IS BROKEN');
-console.log('SWAN DIVE TO SWIM TRANSITION IS BROKEN');
+const PICK_UP_FRAME_NORMAL = 40;
+const PICK_UP_FRAME_UNDERWATER = 18;
 
 export enum LocomotionType {
   GROUND = 0,
@@ -71,211 +72,223 @@ export class CharacterCollision {
 
 export class Lara extends Controller {
   locomotionType = LocomotionType.GROUND;
-  private input_ = new Input();
-  private sector_: Sector = null;
-  private prevSector_: Sector = null;
-  private prevPosition_ = vec3.newZero();
-  private oneOffTriggers_: boolean[] = [];
-  private radius_ = 128;
-  private height_ = 768;
+  private input = new Input();
+  private sector: Sector = null;
+  private prevSector: Sector = null;
+  private radius = 128;
+  private height = 768;
 
   /** Lara's velocity (in character-local space). */
-  private velocity_ = vec3.newZero();
+  private velocity = vec3.newZero();
 
-  private health_ = 1;
-  private state_: State = State.STOP;
+  private state: State = State.STOP;
 
   /** Stored for debug rendering purposes. */
   collisions: CharacterCollision[] = [];
 
-  private grabSector_: Sector = null;
-  private grabHeight_ = 0;
-  private prevGrabTestPosition_ = vec3.newZero();
-  private currGrabTestPosition_ = vec3.newZero();
-  private averageHandPos_ = vec3.newZero();
+  private grabSector: Sector = null;
+  private grabHeight = 0;
+  private prevGrabTestPosition = vec3.newZero();
+  private currGrabTestPosition = vec3.newZero();
+
+  private interactingItem: Item = null;
 
   /**
    * the i'th column of the sector grid that corresponds to Lara's X coordinate.
-   * this.i_ = math.floor(this.item.position[0] / 1024);
+   * this.i = math.floor(this.item.position[0] / 1024);
    */
-  private i_ = 0;
+  private i = 0;
 
   /**
    * the j'th row of the sector grid that corresponds to Lara's Z coordinate.
-   * this.j_ = math.floor(this.item.position[2] / 1024);
+   * this.j = math.floor(this.item.position[2] / 1024);
    */
-  private j_ = 0;
+  private j = 0;
 
-  /** If Lara is pointing mostly along the X axis, di_ == +/- 1 or 0 Otherwise. */
-  private di_ = 0;
+  /** If Lara is pointing mostly along the X axis, di == +/- 1 or 0 Otherwise. */
+  private di = 0;
  
-  /** If Lara is pointing mostly along the Z axis, dj_ == +/- 1 or 0 Otherwise. */
-  private dj_ = 0;
+  /** If Lara is pointing mostly along the Z axis, dj == +/- 1 or 0 Otherwise. */
+  private dj = 0;
 
-  private getStateFuncs_: Function[] = [];
+  private getStateFuncs: Function[] = [];
 
   constructor(item: Item, scene: Scene) {
     super(item, scene);
 
-    vec3.setFromVec(this.prevPosition_, item.position);
-
     let anim = this.scene.animations[AnimationId.IDLE];
     item.animState.setAnim(anim, anim.firstFrame);
 
-    this.getStateFuncs_ = [];
-    this.getStateFuncs_[LocomotionType.GROUND] = this.getStateGround_.bind(this);
-    this.getStateFuncs_[LocomotionType.AIR] = this.getStateAir_.bind(this);
-    this.getStateFuncs_[LocomotionType.HANG] = this.getStateHang_.bind(this);
-    this.getStateFuncs_[LocomotionType.SLIDE] = this.getStateSlide_.bind(this);
-    this.getStateFuncs_[LocomotionType.SWIM] = this.getStateSwim_.bind(this);
-    this.getStateFuncs_[LocomotionType.TREAD_WATER] = this.getStateTreadWater_.bind(this);
+    this.getStateFuncs = [];
+    this.getStateFuncs[LocomotionType.GROUND] = this.getStateGround.bind(this);
+    this.getStateFuncs[LocomotionType.AIR] = this.getStateAir.bind(this);
+    this.getStateFuncs[LocomotionType.HANG] = this.getStateHang.bind(this);
+    this.getStateFuncs[LocomotionType.SLIDE] = this.getStateSlide.bind(this);
+    this.getStateFuncs[LocomotionType.SWIM] = this.getStateSwim.bind(this);
+    this.getStateFuncs[LocomotionType.TREAD_WATER] = this.getStateTreadWater.bind(this);
 
     // Uncomment to dump all of Lara's animations.
     //Animation.dumpGraph(this.scene.animations, item.animState.anim.id);
 
-    // gym - boxes
-    // item.position[0] = 55819;
-    // item.position[1] = 2560;
-    // item.position[2] = 39387;
-    // item.rotation[1] = -Math.PI * 0.5;
-    // item.room = this.scene.rooms[11];
+    if (scene.name == 'GYM.PHD') {
+      // gym - boxes
+      // item.position[0] = 55819;
+      // item.position[1] = 2560;
+      // item.position[2] = 39387;
+      // item.rotation[1] = -Math.PI * 0.5;
+      // item.room = this.scene.rooms[11];
 
-    // gym - ceiling collision
-    // item.position[0] = 42275;
-    // item.position[1] = -1280;
-    // item.position[2] = 48631;
-    // item.rotation[1] = -Math.PI * 0.5;
-    // item.room = this.scene.rooms[7];
+      // gym - ceiling collision
+      // item.position[0] = 42275;
+      // item.position[1] = -1280;
+      // item.position[2] = 48631;
+      // item.rotation[1] = -Math.PI * 0.5;
+      // item.room = this.scene.rooms[7];
 
-    // gym - vault
-    // item.position[0] = 43904;
-    // item.position[1] = 2112;
-    // item.position[2] = 51524;
-    // item.rotation[1] = Math.PI * 0.5;
-    // item.room = this.scene.rooms[12];
-   
-    // gym - fall
-    // item.position[0] = 53165;
-    // item.position[1] = 0;
-    // item.position[2] = 46684;
-    // item.rotation[1] = -3.70;
-    // item.room = this.scene.rooms[9];
-    
-    // caves - low ceiling
-    // item.position[0] = 36445;
-    // item.position[1] = 3040;
-    // item.position[2] = 74138;
-    // item.rotation[1] = 0;
-    // item.room = this.scene.rooms[32];
+      // gym - vault
+      // item.position[0] = 43904;
+      // item.position[1] = 2112;
+      // item.position[2] = 51524;
+      // item.rotation[1] = Math.PI * 0.5;
+      // item.room = this.scene.rooms[12];
+     
+      // gym - fall
+      // item.position[0] = 53165;
+      // item.position[1] = 0;
+      // item.position[2] = 46684;
+      // item.rotation[1] = -3.70;
+      // item.room = this.scene.rooms[9];
+    } else if (scene.name == 'LEVEL01.PHD') {
+      // caves - bridge
+      // item.position[0] = 25122;
+      // item.position[1] = 4352;
+      // item.position[2] = 55814;
+      // item.rotation[1] = Math.PI;
+      // item.room = this.scene.rooms[13];
 
-    // caves - slide
-    // item.position[0] = 74507;
-    // item.position[1] = 3693;
-    // item.position[2] = 12725;
-    // item.rotation[1] = -0.680678;
-    // item.room = this.scene.rooms[0];
+      // caves - switch
+      item.position[0] = 50831;
+      item.position[1] = 7680;
+      item.position[2] = 57704;
+      item.rotation[1] = 1.5 * Math.PI;
+      item.room = this.scene.rooms[9];
 
-    // caves - bridge
-    // item.position[0] = 25122;
-    // item.position[1] = 4352;
-    // item.position[2] = 55814;
-    // item.rotation[1] = Math.PI;
-    // item.room = this.scene.rooms[13];
+      // caves - secret
+      // item.position[0] = 66142;
+      // item.position[1] = -2910;
+      // item.position[2] = 52184;
+      // item.rotation[1] = -0.4 * Math.PI;
+      // item.room = this.scene.rooms[28];
+    } else if (scene.name == 'LEVEL02.PHD') {
+      // vilcabamba - sprites
+      // item.position[0] = 72315;
+      // item.position[1] = 0;
+      // item.position[2] = 24906;
+      // item.rotation[1] = 2.7925;
+      // item.room = this.scene.rooms[15];
 
-    // vilcabamba - sprites
-    // item.position[0] = 72315;
-    // item.position[1] = 0;
-    // item.position[2] = 24906;
-    // item.rotation[1] = 2.7925;
-    // item.room = this.scene.rooms[15];
+      // vilcabamba - jump
+      // item.position[0] = 31251;
+      // item.position[1] = -2560;
+      // item.position[2] = 24704;
+      // item.rotation[1] = Math.PI
+      // item.room = this.scene.rooms[43];
 
-    // vilcabamba - jump
-    // item.position[0] = 31251;
-    // item.position[1] = -2560;
-    // item.position[2] = 24704;
-    // item.rotation[1] = Math.PI
-    // item.room = this.scene.rooms[43];
+      // vilcabamba - portals
+      // item.position[0] = 75545.078125;
+      // item.position[1] = 0;
+      // item.position[2] = 32897.54296875;
+      // item.rotation[1] = -1.326450231515698;
+      // item.room = this.scene.rooms[85];
+    } else if (scene.name == 'LEVEL03A.PHD') {
+      // lost valley - pick up
+      // item.position[0] = 27128;
+      // item.position[1] = -3584;
+      // item.position[2] = 1530;
+      // item.rotation[1] = Math.PI;
+      // item.room = this.scene.rooms[40];
 
-    // vilcabamba - portals
-    // item.position[0] = 75545.078125;
-    // item.position[1] = 0;
-    // item.position[2] = 32897.54296875;
-    // item.rotation[1] = -1.326450231515698;
-    // item.room = this.scene.rooms[85];
+      // lost valley - waterfall climb
+      // item.position[0] = 44539;
+      // item.position[1] = 2624;
+      // item.position[2] = 5248;
+      // item.rotation[1] = -Math.PI;
+      // item.room = this.scene.rooms[59];
 
-    // cistern
-    // item.position[0] = 40300;
-    // item.position[1] = -3328;
-    // item.position[2] = 63766;
-    // item.rotation[1] = -3.61283;
-    // item.room = this.scene.rooms[99];
+      // lost valley - inside waterfall
+      // item.position[0] = 40831;
+      // item.position[1] = -512;
+      // item.position[2] = 2338;
+      // item.rotation[1] = Math.PI;
+      // item.room = this.scene.rooms[31];
 
-    // this.item.position[0] = 45549; 
-    // this.item.position[1] = -3328;
-    // this.item.position[2] = 67050;
-    // this.item.rotation[1] = 3.0892367362976074;
-    // this.item.room = this.scene.rooms[7];
+      // lost valley
+      // item.position[0] = 32639;
+      // item.position[1] = 4960;
+      // item.position[2] = 48256;
+      // item.rotation[1] = 0.5 * Math.PI;
+      // item.room = this.scene.rooms[16];
+    } else if (scene.name == 'LEVEL07A.PHD') {
+      // the cistern - entrance
+      // this.item.position[0] = 45549; 
+      // this.item.position[1] = -3328;
+      // this.item.position[2] = 67050;
+      // this.item.rotation[1] = 3.0892367362976074;
+      // this.item.room = this.scene.rooms[7];
 
-    // lost valley - waterfall climb
-    // item.position[0] = 44539;
-    // item.position[1] = 2624;
-    // item.position[2] = 5248;
-    // item.rotation[1] = -Math.PI;
-    // item.room = this.scene.rooms[59];
+      // the cistern - block
+      this.item.position[0] = 46207; 
+      this.item.position[1] = -5632;
+      this.item.position[2] = 71234;
+      this.item.rotation[1] = -0.5 * Math.PI
+      this.item.room = this.scene.rooms[4];
+      this.scene.items[7].position[0] = 45568; 
+      this.scene.items[7].position[1] = -5632;
+      this.scene.items[7].position[2] = 71168;
+      this.scene.items[7].rotation[1] = -0.5 * Math.PI
+      this.scene.items[7].room = this.scene.rooms[4];
+      this.scene.items[7].room.getSectorByPosition(this.scene.items[7].position).floor -= 1024;
+    } else if (scene.name == 'LEVEL04.PHD') {
+      // st francis' folly - block
+      // item.position[0] = 31217;
+      // item.position[1] = 256;
+      // item.position[2] = 36339;
+      // item.rotation[1] = 0.5 * Math.PI;
+      // item.room = this.scene.rooms[0];
 
-    // lost valley - inside waterfall
-    // item.position[0] = 40831;
-    // item.position[1] = -512;
-    // item.position[2] = 2338;
-    // item.rotation[1] = Math.PI;
-    // item.room = this.scene.rooms[31];
+      // st francis' folly - item
+      // item.position[0] = 34104;
+      // item.position[1] = -3840;
+      // item.position[2] = 40127;
+      // item.rotation[1] = 0.1571;
+      // item.room = this.scene.rooms[1];
+    } else if (scene.name == 'LEVLE05.PHD') {
+      // colosseum
+      // item.position[0] = 81537;
+      // item.position[1] = 0;
+      // item.position[2] = 38783;
+      // item.rotation[1] = 0;
+      // item.room = this.scene.rooms[4];
+    } else if (scene.name == 'LEVLE06.PHD') {
+      // palace midas
+      // item.position[0] = 37147;
+      // item.position[1] = -4678;
+      // item.position[2] = 29231;
+      // item.rotation[1] = 0.5 * Math.PI;
+      // item.room = this.scene.rooms[42];
+    }
 
-    // lost valley
-    // item.position[0] = 32639;
-    // item.position[1] = 4960;
-    // item.position[2] = 48256;
-    // item.rotation[1] = 0.5 * Math.PI;
-    // item.room = this.scene.rooms[16];
-    
-    // st francis' folly - block
-    // item.position[0] = 31217;
-    // item.position[1] = 256;
-    // item.position[2] = 36339;
-    // item.rotation[1] = 0.5 * Math.PI;
-    // item.room = this.scene.rooms[0];
-
-    // st francis' folly - item
-    // item.position[0] = 34104;
-    // item.position[1] = -3840;
-    // item.position[2] = 40127;
-    // item.rotation[1] = 0.1571;
-    // item.room = this.scene.rooms[1];
-
-    // colosseum
-    // item.position[0] = 81537;
-    // item.position[1] = 0;
-    // item.position[2] = 38783;
-    // item.rotation[1] = 0;
-    // item.room = this.scene.rooms[4];
-
-    // palace midas
-    // item.position[0] = 37147;
-    // item.position[1] = -4678;
-    // item.position[2] = 29231;
-    // item.rotation[1] = 0.5 * Math.PI;
-    // item.room = this.scene.rooms[42];
-
-    this.sector_ = this.item.room.getSectorByPosition(this.item.position);
-    // this.updateTriggers_();
-    // this.prevSector_ = this.sector_;
+    this.sector = this.item.room.getSectorByPosition(this.item.position);
+    // this.updateTriggers();
+    // this.prevSector = this.sector;
   }
 
   getBoneTransform(bone: LaraBone) {
     return this.item.animState.meshTransforms[bone];
   }
 
-  private updateGrabTestPosition_() {
-    vec3.setFromVec(this.prevGrabTestPosition_, this.currGrabTestPosition_);
+  private updateGrabTestPosition() {
+    vec3.setFromVec(this.prevGrabTestPosition, this.currGrabTestPosition);
   
     let leftTransform = this.getBoneTransform(LaraBone.LEFT_WRIST);
     let rightTransform = this.getBoneTransform(LaraBone.RIGHT_WRIST);
@@ -284,18 +297,18 @@ export class Lara extends Controller {
       // the grab test Position.
       let l = leftTransform[12 + i] + 48 * leftTransform[4 + i];
       let r = rightTransform[12 + i] + 48 * rightTransform[4 + i];
-      this.currGrabTestPosition_[i] = 0.5 * (l + r);
+      this.currGrabTestPosition[i] = 0.5 * (l + r);
     }
   }
   
   /** Moves Lara according to her rotation & local velocity. */
-  private move_(dt: number) {
+  private move(dt: number) {
     let item = this.item;
     let animState = item.animState;
   
     this.collisions.length = 0;
     // Do nothing if Lara isn't moving.
-    if (this.velocity_[0] == 0 && this.velocity_[2] == 0) {
+    if (this.velocity[0] == 0 && this.velocity[2] == 0) {
       return;
     }
   
@@ -310,8 +323,8 @@ export class Lara extends Controller {
         animState.transform[9],
         animState.transform[10]);
     let room = item.room;
-    vec3.scale(z, FPS * dt * this.velocity_[2], z);
-    vec3.scale(x, FPS * dt * this.velocity_[0], x);
+    vec3.scale(z, FPS * dt * this.velocity[2], z);
+    vec3.scale(x, FPS * dt * this.velocity[0], x);
     vec3.add(v, x, z);
   
     let length = vec3.length(v);
@@ -325,13 +338,13 @@ export class Lara extends Controller {
         intersection.geom.t = length;
   
         if (!moveCharacter(
-              room, p, vv, this.radius_, this.height_, intersection,
-              this.state_)) {
+              room, p, vv, this.radius, this.height, intersection,
+              this.state)) {
           vec3.add(p, p, v);
           break;
         }
   
-        let pos = vec3.scale(vec3.newZero(), -this.radius_, intersection.geom.n);
+        let pos = vec3.scale(vec3.newZero(), -this.radius, intersection.geom.n);
         vec3.add(pos, pos, item.position);
   
         this.collisions.push(new CharacterCollision(
@@ -364,40 +377,37 @@ export class Lara extends Controller {
    *     edge between her current sector (i, j) and the next sector
    *     (i + di, j + dj).
    */
-  private nearSectorEdge_() {
-    // Check that Lara is close enough to the next sector to potentially grab it.
-    let dis = this.radius_ + 1;
-  
+  private nearSectorEdge(dis: number) {
     let position = this.item.position;
     let fx = position[0] % 1024;
     fx = fx >= 0 ? fx : fx + 1024;
-    if (this.di_ == 1) {
+    if (this.di == 1) {
       return fx > 1024 - dis;
     }
-    if (this.di_ == -1) {
+    if (this.di == -1) {
       return fx <= dis;
     }
   
     let fz = position[2] % 1024;
     fz = fz >= 0 ? fz : fz + 1024;
-    if (this.dj_ == 1) {
+    if (this.dj == 1) {
       return fz > 1024 - dis;
     }
-    if (this.dj_ == -1) {
+    if (this.dj == -1) {
       return fz <= dis;
     }
   
     throw new Error('Either di or dj should always be +/- 1');
   }
 
-  findGrabSector_() {
-    this.grabSector_ = null;
-    this.grabHeight_ = 0;
+  findGrabSector() {
+    this.grabSector = null;
+    this.grabHeight = 0;
   
     let position = this.item.position;
     // Get (i, j) index of potential grab sector.
-    let i = this.i_ + this.di_;
-    let j = this.j_ + this.dj_;
+    let i = this.i + this.di;
+    let j = this.j + this.dj;
   
     // Get the sector at this location.
     let room = resolveRoomByGrid(this.item.room, i, j, position[1]);
@@ -411,12 +421,22 @@ export class Lara extends Controller {
   
     // Get the floor height at the point closest to Lara and check that it is
     // high enough to perform a vault or a grab.
+    // TODO(tom): there's a bug here (which is also present in TR1): if there's
+    // an overhang that Lara should be able to vault up, it won't be detected
+    // here. A good example is the room in Vilcabamba with the collapsing floor
+    // and pullable block (just before you get the key): pull the block back
+    // one tile, climb up and try to vault up to the ledge with the large
+    // medipack.
     let floor = sector.getFloorAt(position);
     let dy = this.item.position[1] - floor;
-    if (this.state_ == State.TREAD_WATER_STOP ||
-        this.state_ == State.TREAD_WATER_FORWARD) {
-      if (sector.floor >= this.sector_.floor ||
-          this.sector_.floor - sector.floor > 256 + 128) {
+    if (dy > VAULT_HIGH_HEIGHT) {
+      return;
+    }
+
+    if (this.state == State.TREAD_WATER_STOP ||
+        this.state == State.TREAD_WATER_FORWARD) {
+      if (sector.floor >= this.sector.floor ||
+          this.sector.floor - sector.floor > 256 + 128) {
         return;
       }
     } else {
@@ -431,15 +451,15 @@ export class Lara extends Controller {
     // head as she climbs up.
     if (dy <= VAULT_MEDIUM_HEIGHT) {
       let ceiling = Math.max(
-          this.sector_.getCeilingAt(position),
+          this.sector.getCeilingAt(position),
           sector.getCeilingAt(position));
-      if (floor - ceiling < this.height_) {
+      if (floor - ceiling < this.height) {
         return;
       }
     }
   
     // Check that the floor slope is not too steep.
-    if (this.di_ == 0) {
+    if (this.di == 0) {
       if (Math.abs(sector.floorData.floorSlope[0]) > 512) {
         return;
       }
@@ -450,53 +470,64 @@ export class Lara extends Controller {
     }
   
     // Check that Lara is close enough to the next sector to potentially grab it.
-    if (!this.nearSectorEdge_()) {
+    if (!this.nearSectorEdge(this.radius + 1)) {
       return;
     }
-  
+
     // All tests pass, we found a grab candidate.
-    this.grabSector_ = sector;
-    this.grabHeight_ = floor;
+    this.grabSector = sector;
+    this.grabHeight = floor;
   }
  
 
   update(dt: number) {
+    // TODO(tom): refactor Controller.update and Lara.update we can call
+    // super.update(dt) here.
+
     let item = this.item;
     let animState = item.animState;
+    let prevFrameIdx = animState.frameIdx;
   
-    this.input_.update();
+    this.input.update();
   
-    this.locomotionType = this.getLocomotionType_();
-    this.updateState_(dt);
-    this.updateVelocity_(dt);
-    this.updatePosition_(dt);
-    this.updateSector_();
+    this.locomotionType = this.getLocomotionType();
+    this.updateState(dt);
+    this.updateVelocity(dt);
+    this.updatePosition(dt);
+    this.updateSector();
   
     animState.anim.getFrame(
         animState.frameIdx, animState.frameOfs, animState.frame);
     animState.setMeshTransforms(
-        item.moveable.meshCount,
-        item.moveable.meshTree,
-        this.scene.meshTrees);
-    this.updateGrabTestPosition_();
+        item.moveable.meshCount, item.moveable.meshTree, this.scene.meshTrees);
+    if (animState.frameIdx != prevFrameIdx) {
+      this.onAnimFrameChange();
+    }
+
+    this.updateGrabTestPosition();
   }
 
-  private getLocomotionType_() {
-    if (State.isHanging(this.state_)) {
+  private getLocomotionType() {
+    let sector = this.sector;
+  
+    if (State.isHanging(this.state)) {
       return LocomotionType.HANG;
     }
-    if (State.isTreadingWater(this.state_)) {
+
+    if (State.isTreadingWater(this.state)) {
+      // For places like the river at the top of Lost Valley: fall if Lara can't
+      // possibly be treading water anymore.
+      if (!sector.roomBelow || !sector.roomBelow.isUnderwater()) {
+        return LocomotionType.AIR;
+      }
       return LocomotionType.TREAD_WATER;
     }
   
-    let sector = this.sector_;
-  
-    if (this.item.room.underwater()) {
-      if (State.isSwimming(this.state_)) {
-        if (this.item.position[1] - this.radius_ < sector.ceiling) {
-          if (!sector.roomAbove || !sector.roomAbove.underwater()) {
-            return LocomotionType.TREAD_WATER;
-          }
+    if (this.item.room.isUnderwater()) {
+      if (State.isSwimming(this.state)) {
+        if (sector.roomAbove && !sector.roomAbove.isUnderwater() &&
+            this.item.position[1] - this.radius < sector.ceiling) {
+          return LocomotionType.TREAD_WATER;
         }
       } else {
         // Don't transition to swim until Lara's hips are underwater.
@@ -506,15 +537,25 @@ export class Lara extends Controller {
         if (v[1] < sector.ceiling) {
           return this.locomotionType;
         }
+        if (this.state == State.SWAN_DIVE) {
+          // On entering the water from a swan dive, take Lara's pitch from her
+          // pelvis transform.
+          let m = this.item.animState.meshTransforms[LaraBone.PELVIS];
+          this.item.rotation[0] = Math.asin(m[5]);
+        }
       }
       return LocomotionType.SWIM;
+    } else {
+      if (State.isSwimming(this.state)) {
+        return LocomotionType.AIR;
+      }
     }
   
-    if (this.state_ == State.DIVE) {
+    if (this.state == State.DIVE) {
       return LocomotionType.SWIM;
     }
-    if (State.isSwimming(this.state_)) {
-      if (sector.roomBelow && sector.roomBelow.underwater()) {
+    if (State.isSwimming(this.state)) {
+      if (sector.roomBelow && sector.roomBelow.isUnderwater()) {
         return LocomotionType.TREAD_WATER;
       } else {
         return LocomotionType.AIR;
@@ -529,7 +570,7 @@ export class Lara extends Controller {
     if (this.locomotionType == LocomotionType.AIR) {
       if (this.item.position[1] >= floor) {
         let animState = this.item.animState;
-        if (this.velocity_[1] >= 0 ||
+        if (this.velocity[1] >= 0 ||
             animState.frameIdx > animState.anim.firstFrame + 2) {
           return slide ? LocomotionType.SLIDE : LocomotionType.GROUND;
         }
@@ -539,46 +580,100 @@ export class Lara extends Controller {
         return slide ? LocomotionType.SLIDE : LocomotionType.GROUND;
       }
     }
-  
+
     return LocomotionType.AIR;
   }
- 
 
-  private findBlock_() {
-    // If Lara isn't near a sector edge, there's no way she can push a block.
-    if (!this.nearSectorEdge_()) {
-      return null;
+  private tryInteraction() {
+    let room = resolveRoomByGrid(
+        this.item.room, this.i, this.j, this.item.position[1]);
+    let sector = room.getSectorByGrid(this.i, this.j);
+    if (room != this.item.room) {
+      debugger
+    }
+    if (sector != this.sector) {
+      debugger
+    }
+
+    // First check if Lara can interact with a switch (since we can check
+    // that directly).
+    let trigger = sector.getTrigger(TriggerType.SWITCH);
+    if (trigger != null) {
+      if (this.nearSectorEdge(this.radius + 16)) {
+        if (this.state == State.WALK || this.state == State.RUN) {
+          this.hardTransitionToIdle();
+        }
+        let controller = this.scene.controllers[trigger.actions[1] & 0x3ff];
+        if (isSwitch(controller)) {
+          let switchState = 1 - controller.item.animState.anim.state;
+          let laraState = switchState ? State.SWITCH_UP : State.SWITCH_DOWN;
+          if (this.item.animState.tryChangeState(laraState)) {
+            controller.changeState(switchState);
+            this.alignToAxis();
+            return laraState;
+          }
+        }
+      }
     }
   
-    // Get the sector ahead of Lara.
-    let i = this.i_ + this.di_;
-    let j = this.j_ + this.dj_;
-    let y = this.item.position[1];
-    let room = resolveRoomByGrid(this.item.room, i, j, y);
-    let sector = room.getSectorByGrid(i, j);
-  
-    // If the sector floor isn't flat, a block can't be on it.
-    if (sector.floorData.floorSlope[0] != 0 ||
-        sector.floorData.floorSlope[1] != 0) {
-      return null;
-    }
-  
-    // Quick tests have all passed, look for a block that's in the desired
-    // sector and at the same height as Lara.
     for (let item of this.scene.items) {
-      if (!item.isBlock()) {
+      if (!item.active || item == this.item) {
         continue;
       }
-      let p = item.position;
-      if (i == Math.floor(item.position[0] / 1024) &&
-          j == Math.floor(item.position[2] / 1024) &&
-          y == item.position[1] &&
-          room == item.room) {
-        return item;
+ 
+      if (item.isPickup()) {
+        if (item.room == room &&
+            this.item.animState.canChangeState(State.PICK_UP)) {
+          console.log(`${ItemType[item.type]} ${vec3.distance(item.position, this.item.position)}`);
+          if (vec3.distance(item.position, this.item.position) < 320) {
+            this.interactingItem = item;
+            return State.PICK_UP;
+          }
+        }
+      } else if (item.isBlock()) {
+        // Lara must be near a sector edge in order to grab a block.
+        if (!this.nearSectorEdge(this.radius + 1)) {
+          continue;
+        }
+        if (this.i + this.di == Math.floor(item.position[0] / 1024) &&
+            this.j + this.dj == Math.floor(item.position[2] / 1024) &&
+            this.item.position[1] == item.position[1]) {
+          this.interactingItem = item;
+          if (this.state == State.PUSH_READY) {
+            if (this.input.forward || this.input.backward) {
+              let di, dj: number;
+              let targetRoom: Room;
+              let laraState: State;
+              let blockState: BlockState;
+              if (this.input.forward) {
+                // Trying to push the block forwards: check whether there's
+                // space in front of the block (start from the block's room).
+                [di, dj, targetRoom] = [2 * this.di, 2 * this.dj, item.room];
+                [laraState, blockState] = [State.PUSH_BLOCK, BlockState.PUSH];
+              } else {
+                // Trying to push the block backwards: check whether there's
+                // space in behind Lara  (start from Lara's room).
+                [di, dj, targetRoom] = [-this.di, -this.dj, room];
+                [laraState, blockState] = [State.PULL_BLOCK, BlockState.PULL];
+              }
+              if (this.item.animState.canChangeState(laraState) &&
+                  this.canPushBlockTo(targetRoom, this.i + di, this.j + dj, item.position[1])) {
+                item.rotation[1] = this.item.rotation[1];
+                item.animState.tryChangeState(blockState);
+                return laraState;
+              }
+            }
+            return State.PUSH_READY;
+          } else if (!this.input.forward) {
+            this.alignToAxis();
+            return State.PUSH_READY;
+          }
+          return State.NONE;
+        }
       }
     }
-  
-    return null;
+
+    return State.NONE;
   }
   
   /**
@@ -590,7 +685,7 @@ export class Lara extends Controller {
    * @return {boolean} True if a block with height y can be pushed to the
    *     sector at (i, j).
    */
-  private canPushBlockTo_(room: Room, i: number, j: number, y: number) {
+  private canPushBlockTo(room: Room, i: number, j: number, y: number) {
     room = resolveRoomByGrid(room, i, j, y);
     if (room == null) { return false; }
     let sector = room.getSectorByGrid(i, j);
@@ -600,23 +695,23 @@ export class Lara extends Controller {
             sector.floorData.floorSlope[1] == 0);
   }
   
-  private alignToAxis_() {
-    this.item.rotation[1] = Math.atan2(this.di_, this.dj_);
+  private alignToAxis() {
+    this.item.rotation[1] = Math.atan2(this.di, this.dj);
   }
   
-  private getStateGround_() {
-    let forward = this.input_.forward;
-    let backward = this.input_.backward;
-    let left = this.input_.left;
-    let right = this.input_.right;
-    let action = this.input_.action;
-    let stepLeft = this.input_.stepLeft;
-    let stepRight = this.input_.stepRight;
-    let jump = this.input_.jump;
-    let walk = this.input_.walk;
+  private getStateGround() {
+    let forward = this.input.forward;
+    let backward = this.input.backward;
+    let left = this.input.left;
+    let right = this.input.right;
+    let action = this.input.action;
+    let stepLeft = this.input.stepLeft;
+    let stepRight = this.input.stepRight;
+    let jump = this.input.jump;
+    let walk = this.input.walk;
     
     // Handle transition from fall.
-    if (this.state_ == State.FALL) {
+    if (this.state == State.FALL) {
       if (!this.item.animState.canChangeState(State.STOP)) {
         let anim = this.scene.animations[AnimationId.LAND];
         this.item.animState.setAnim(anim, anim.firstFrame);
@@ -625,92 +720,70 @@ export class Lara extends Controller {
     }
   
     // Handle transition from jump.
-    if (State.isJumping(this.state_)) {
+    if (State.isJumping(this.state)) {
       let position = this.item.position;
-      if (this.velocity_[1] < 0) {
+      if (this.velocity[1] < 0) {
         let anim = this.scene.animations[AnimationId.LAND];
         this.item.animState.setAnim(anim, anim.firstFrame);
-        this.velocity_[1] = 0;
+        this.velocity[1] = 0;
       }
-      if (this.state_ == State.JUMP_FORWARD && forward && !walk) { return State.RUN; }
+      if (this.state == State.JUMP_FORWARD && forward && !walk) { return State.RUN; }
       return State.STOP;
     }
   
     // Handle transition from slide
-    if (this.state_ == State.SLIDE || this.state_ == State.SLIDE_BACK) {
+    if (this.state == State.SLIDE || this.state == State.SLIDE_BACK) {
       return State.STOP;
     }
   
     // Jump
-    if (this.state_ == State.COMPRESS) {
+    if (this.state == State.COMPRESS) {
       if (forward) { return State.JUMP_FORWARD; }
       if (backward) { return State.JUMP_BACK; }
       if (left) { return State.JUMP_LEFT; }
       if (right) { return State.JUMP_RIGHT; }
-      return this.state_;
+      return this.state;
     }
     if (jump) {
-      if (this.state_ == State.RUN) { return State.JUMP_FORWARD; }
-      if (this.state_ == State.STOP) { return State.COMPRESS; }
+      if (this.state == State.RUN) { return State.JUMP_FORWARD; }
+      if (this.state == State.STOP) { return State.COMPRESS; }
     }
   
     // Side step
-    if (this.state_ == State.STEP_LEFT) {
+    if (this.state == State.STEP_LEFT) {
       return stepLeft && !stepRight ? State.STEP_LEFT : State.STOP;
     }
-    if (this.state_ == State.STEP_RIGHT) {
+    if (this.state == State.STEP_RIGHT) {
       return stepRight && !stepLeft ? State.STEP_RIGHT : State.STOP;
     }
-    if (this.state_ == State.STOP) {
+    if (this.state == State.STOP) {
       if (stepLeft && !stepRight) { return State.STEP_LEFT; }
       if (stepRight && !stepLeft) { return State.STEP_RIGHT; }
     }
   
     // Push or pull block
-    if (this.state_ == State.PUSH_BLOCK ||
-        this.state_ == State.PULL_BLOCK) {
-      return this.state_;
+    if (this.state == State.PUSH_BLOCK ||
+        this.state == State.PULL_BLOCK) {
+      return this.state;
     }
     if (action) {
-      let block = this.findBlock_();
-      if (block != null) {
-        if (this.state_ == State.PUSH_READY) {
-          if (forward && this.item.animState.canChangeState(State.PUSH_BLOCK)) {
-            if (this.canPushBlockTo_(
-                  block.room, this.i_ + 2 * this.di_, this.j_ + 2 * this.dj_,
-                  block.position[1])) {
-              block.rotation[1] = this.item.rotation[1];
-              block.animState.tryChangeState(BlockState.PUSH);
-              return State.PUSH_BLOCK;
-            }
-          }
-          if (backward && this.item.animState.canChangeState(State.PULL_BLOCK)) {
-            if (this.canPushBlockTo_(
-                  this.item.room, this.i_ - this.di_, this.j_ - this.dj_,
-                  block.position[1])) {
-              block.rotation[1] = this.item.rotation[1];
-              block.animState.tryChangeState(BlockState.PULL);
-              return State.PULL_BLOCK;
-            }
-          }
-          return State.PUSH_READY;
-        }
-        if (!forward) {
-          this.alignToAxis_();
-          return State.PUSH_READY;
-        }
+      let state = this.tryInteraction();
+      if (state != State.NONE) {
+        return state;
       }
     }
   
     // Climb up
-    if (this.grabSector_ != null && forward && action) {
-      if (this.state_ != State.STOP) {
-        let anim = this.scene.animations[AnimationId.IDLE];
-        this.item.animState.setAnim(anim, anim.firstFrame);
-        return State.STOP;
+    if (this.grabSector != null && forward && action) {
+      // Perform a hard transition from walk or run to idle.
+      // This allows Lara to go straight from run or walk into climb up without
+      // having to stop.
+      if (this.state == State.WALK || this.state == State.RUN) {
+        this.hardTransitionToIdle();
       }
+
       if (this.item.animState.anim.id == AnimationId.IDLE) {
-        let dy = this.item.position[1] - this.grabHeight_;
+        let dy = this.item.position[1] - this.grabHeight;
         let anim = null;
         // TODO(tom): snap height
         if (dy <= VAULT_LOW_HEIGHT) {
@@ -721,7 +794,7 @@ export class Lara extends Controller {
           anim = this.scene.animations[AnimationId.PREPARE_JUMP_UP_GRAB];
         }
         if (anim != null) {
-          this.alignToAxis_();
+          this.alignToAxis();
           this.item.animState.setAnim(anim, anim.firstFrame);
         }
       }
@@ -734,11 +807,11 @@ export class Lara extends Controller {
     }
   
     // Turn
-    if (this.state_ == State.STOP || this.state_ == State.TURN_FAST ||
-        this.state_ == State.TURN_LEFT || this.state_ == State.TURN_RIGHT) {
+    if (this.state == State.STOP || this.state == State.TURN_FAST ||
+        this.state == State.TURN_LEFT || this.state == State.TURN_RIGHT) {
       if (left != right) {
-        if (this.state_ == State.TURN_FAST) {
-          return this.state_;
+        if (this.state == State.TURN_FAST) {
+          return this.state;
         }
         let animState = this.item.animState;
         let slow = animState.anim.id == AnimationId.IDLE || animState.loopCount == 0;
@@ -749,50 +822,56 @@ export class Lara extends Controller {
           return slow ? State.TURN_RIGHT : State.TURN_FAST;
         }
       }
-      if (this.state_ != State.STOP) {
+      if (this.state != State.STOP) {
         return State.STOP;
       }
     }
   
     // Backward
     if (backward) {
-      if (this.state_ == State.RUN || this.state_ == State.WALK) { return State.STOP }
-      if (this.state_ == State.BACK && !walk) { return State.STOP; }
+      if (this.state == State.RUN || this.state == State.WALK) { return State.STOP }
+      if (this.state == State.BACK && !walk) { return State.STOP; }
       return walk ? State.BACK : State.FAST_BACK;
     }
   
     return State.STOP;
   }
 
-  private getStateAir_() {
-    let forward = this.input_.forward;
-    let action = this.input_.action;
-    let walk = this.input_.walk;
+  private hardTransitionToIdle() {
+    let anim = this.scene.animations[AnimationId.IDLE];
+    this.item.animState.setAnim(anim, anim.firstFrame);
+    this.state = State.STOP;
+  }
+
+  private getStateAir() {
+    let forward = this.input.forward;
+    let action = this.input.action;
+    let walk = this.input.walk;
   
     // Handle transitions from ground.
-    if (!State.isJumping(this.state_) && this.state_ != State.FALL) {
+    if (!State.isJumping(this.state) && this.state != State.FALL) {
       // TODO(tom): Figure out how to do this properly
-      if (this.state_ == State.FAST_BACK) {
-        this.velocity_[2] = -6;
+      if (this.state == State.FAST_BACK) {
+        this.velocity[2] = -6;
       }
       let anim = this.scene.animations[AnimationId.START_DROP];
       this.item.animState.setAnim(anim, anim.firstFrame);
       return this.item.animState.anim.state;
     }
   
-    if (this.velocity_[1] > FALL_SPEED) {
+    if (this.velocity[1] > FALL_SPEED) {
       return State.FALL;
     }
   
-    if ((this.state_ == State.REACH || this.state_ == State.JUMP_UP) && action) {
-      let di = this.di_;
-      let dj = this.dj_;
+    if ((this.state == State.REACH || this.state == State.JUMP_UP) && action) {
+      let di = this.di;
+      let dj = this.dj;
   
-      let prevPos = this.prevGrabTestPosition_;
-      let currPos = this.currGrabTestPosition_;
+      let prevPos = this.prevGrabTestPosition;
+      let currPos = this.currGrabTestPosition;
   
       // Get the adjacent sector in that direction.
-      let grabDistance = this.radius_ + 32;
+      let grabDistance = this.radius + 32;
   
       let v = vec3.newFromValues(
           this.item.position[0],
@@ -817,49 +896,49 @@ export class Lara extends Controller {
         //   150 "catch_edge_no_wall"
         let anim = this.scene.animations[AnimationId.HANG];
         let frame = anim.firstFrame;
-        if (this.state_ == State.JUMP_UP) {
+        if (this.state == State.JUMP_UP) {
           frame += 15;
         }
         this.item.animState.setAnim(anim, frame);
         this.item.rotation[1] = Math.atan2(di, dj);
         grabSector.getNearestFloorPosition(this.item.position, this.item.position);
         // Snap Lara to the grab position
-        this.item.position[0] -= this.radius_ * di;
+        this.item.position[0] -= this.radius * di;
         this.item.position[1] = grabFloor + HANG_OFFSET;
-        this.item.position[2] -= this.radius_ * dj;
-        this.velocity_.fill(0);
+        this.item.position[2] -= this.radius * dj;
+        this.velocity.fill(0);
         return State.HANG;
       }
     }
   
     let position = this.item.position;
-    let floor = this.sector_.getFloorAt(position);
+    let floor = this.sector.getFloorAt(position);
     if (floor == position[1]) {
       if (forward) { return State.RUN; }
       return State.STOP;
     }
   
-    if (action && this.state_ != State.JUMP_UP) { return State.REACH; }
+    if (action && this.state != State.JUMP_UP) { return State.REACH; }
   
     if (walk) { return State.SWAN_DIVE; }
   
-    return this.state_;
+    return this.state;
   }
 
-  private getStateHang_() {
-    let forward = this.input_.forward;
-    let left = this.input_.left;
-    let right = this.input_.right;
-    let action = this.input_.action;
-    let walk = this.input_.walk;
+  private getStateHang() {
+    let forward = this.input.forward;
+    let left = this.input.left;
+    let right = this.input.right;
+    let action = this.input.action;
+    let walk = this.input.walk;
   
     // Get the sector that Lara is hanging from.
-    let di = this.di_;
-    let dj = this.dj_;
-    let hy = this.currGrabTestPosition_[1] - 64;
-    let hi = this.i_ + di;
-    let hj = this.j_ + dj;
-    let currHangSector = this.sector_.getResolvedSectorByGrid(hi, hj, hy);
+    let di = this.di;
+    let dj = this.dj;
+    let hy = this.currGrabTestPosition[1] - 64;
+    let hi = this.i + di;
+    let hj = this.j + dj;
+    let currHangSector = this.sector.getResolvedSectorByGrid(hi, hj, hy);
     let currHangRoom = currHangSector.room;
   
     // Get the height of the floor at the point Lara is hanging from.
@@ -871,9 +950,9 @@ export class Lara extends Controller {
     // partway through shimmying in one direction and the input is pointing in the
     // opposite direction.
     let checkLeft, checkRight;
-    if (this.state_ == State.SHIMMY_LEFT || this.state_ == State.SHIMMY_RIGHT) {
-      checkLeft = this.state_ == State.SHIMMY_LEFT;
-      checkRight = this.state_ == State.SHIMMY_RIGHT;
+    if (this.state == State.SHIMMY_LEFT || this.state == State.SHIMMY_RIGHT) {
+      checkLeft = this.state == State.SHIMMY_LEFT;
+      checkRight = this.state == State.SHIMMY_RIGHT;
     } else {
       checkLeft = left;
       checkRight = right;
@@ -900,13 +979,13 @@ export class Lara extends Controller {
       //         +-----+
       let ni, nj, nhi, nhj;
       if (checkLeft) {
-        ni = this.i_ - dj;
-        nj = this.j_ + di;
+        ni = this.i - dj;
+        nj = this.j + di;
         nhi = hi - dj;
         nhj = hj + di;
       } else {
-        ni = this.i_ + dj;
-        nj = this.j_ - di;
+        ni = this.i + dj;
+        nj = this.j - di;
         nhi = hi + dj;
         nhj = hj - di;
       }
@@ -974,7 +1053,7 @@ export class Lara extends Controller {
         if (fz < 0) { fz += 1024; }
         let dx = currHangA * 1024 - fx;
         let dz = currHangB * 1024 - fz;
-        canShimmy = Math.abs(di * dz - dj * dx) > this.radius_ + 1;
+        canShimmy = Math.abs(di * dz - dj * dx) > this.radius + 1;
       }
   
       // Check that the ground below Lara hasn't sloped up so much that it blocks
@@ -982,29 +1061,29 @@ export class Lara extends Controller {
       if (canShimmy) {
         let ahead = vec3.newFromVec(this.item.position);
         if (checkLeft) {
-          ahead[0] -= this.radius_ * dj;
-          ahead[2] += this.radius_ * di;
+          ahead[0] -= this.radius * dj;
+          ahead[2] += this.radius * di;
         } else {
-          ahead[0] += this.radius_ * dj;
-          ahead[2] -= this.radius_ * di;
+          ahead[0] += this.radius * dj;
+          ahead[2] -= this.radius * di;
         }
-        let aheadFloor = this.sector_.getFloorAt(ahead);
+        let aheadFloor = this.sector.getFloorAt(ahead);
         let aheadHang = currHangSector.getFloorAt(ahead);
         canShimmy = aheadHang + HANG_OFFSET < aheadFloor;
       }
     }
   
-    if (this.state_ == State.SHIMMY_LEFT || this.state_ == State.SHIMMY_RIGHT) {
+    if (this.state == State.SHIMMY_LEFT || this.state == State.SHIMMY_RIGHT) {
       this.item.position[1] = hangFloor + HANG_OFFSET;
   
       if (!canShimmy) {
-        vec3.setFromValues(this.velocity_, 0, 0, 0);
+        vec3.setFromValues(this.velocity, 0, 0, 0);
         let anim = this.scene.animations[AnimationId.HANG];
         this.item.animState.setAnim(anim, anim.firstFrame + 21);
         return State.HANG;
       }
   
-      if (this.state_ == State.SHIMMY_LEFT) {
+      if (this.state == State.SHIMMY_LEFT) {
         return left ? State.SHIMMY_LEFT : State.HANG;
       } else {
         return right ? State.SHIMMY_RIGHT : State.HANG;
@@ -1016,21 +1095,21 @@ export class Lara extends Controller {
       // ceiling and the next one to avoid Lara bumping her head on the way up.
       let hangCeiling = Math.max(
           currHangSector.getCeilingAt(this.item.position),
-          this.sector_.getCeilingAt(this.item.position));
-      if (hangCeiling - hangFloor < -this.height_) {
+          this.sector.getCeilingAt(this.item.position));
+      if (hangCeiling - hangFloor < -this.height) {
         return walk ? State.HANDSTAND : State.HANG_UP;
       }
     }
     if (left && canShimmy) { return State.SHIMMY_LEFT; }
     if (right && canShimmy) { return State.SHIMMY_RIGHT; }
   
-    if (action || this.state_ == State.HANG_UP || this.state_ == State.HANDSTAND ||
-        this.state_ == State.WATER_OUT) {
+    if (action || this.state == State.HANG_UP || this.state == State.HANDSTAND ||
+        this.state == State.WATER_OUT) {
       return State.HANG;
     }
   
     // Let go.
-    vec3.setFromValues(this.velocity_, 0, 0, 0);
+    vec3.setFromValues(this.velocity, 0, 0, 0);
     this.item.position[1] += 128;
     let anim = this.scene.animations[AnimationId.JUMP_UP];
     this.item.animState.setAnim(anim, anim.firstFrame);
@@ -1038,20 +1117,20 @@ export class Lara extends Controller {
     return State.JUMP_UP;
   }
 
-  private getStateSlide_() {
-    let jump = this.input_.jump;
+  private getStateSlide() {
+    let jump = this.input.jump;
   
     // Starting a jump from slide takes a few frames so don't do any state
     // handling during that time, otherwise we may mess up the transition to
     // the actual jump.
     if (this.item.animState.anim.id == AnimationId.START_JUMP_FORWARD ||
         this.item.animState.anim.id == AnimationId.START_JUMP_BACK) {
-      return this.state_;
+      return this.state;
     }
   
-    if (this.state_ != State.SLIDE && this.state_ != State.SLIDE_BACK) {
-      let sx = this.sector_.floorData.floorSlope[0];
-      let sz = this.sector_.floorData.floorSlope[1];
+    if (this.state != State.SLIDE && this.state != State.SLIDE_BACK) {
+      let sx = this.sector.floorData.floorSlope[0];
+      let sz = this.sector.floorData.floorSlope[1];
       let dx = this.item.animState.transform[8];
       let dz = this.item.animState.transform[10];
       let back;
@@ -1075,34 +1154,41 @@ export class Lara extends Controller {
       if (back) {
         let anim = this.scene.animations[AnimationId.START_BACK_SLIDE];
         this.item.animState.setAnim(anim, anim.firstFrame);
-        this.state_ = State.SLIDE_BACK;
+        this.state = State.SLIDE_BACK;
       } else {
         let anim = this.scene.animations[AnimationId.SLIDE];
         this.item.animState.setAnim(anim, anim.firstFrame);
-        this.state_ = State.SLIDE;
+        this.state = State.SLIDE;
       }
     }
   
     if (jump) {
-      if (this.state_ == State.SLIDE_BACK) {
+      if (this.state == State.SLIDE_BACK) {
         return State.JUMP_BACK;
-      } else if (this.state_ == State.SLIDE) {
+      } else if (this.state == State.SLIDE) {
         return State.JUMP_FORWARD;
       }
     }
   
-    return this.state_;
+    return this.state;
   }
 
-  private getStateSwim_() {
-    if (this.state_ == State.STOP && this.locomotionType == LocomotionType.SWIM) {
+  private getStateSwim() {
+    if (this.input.action) {
+      let state = this.tryInteraction();
+      if (state != State.NONE) {
+        return state;
+      }
+    }
+
+    if (this.state == State.STOP && this.locomotionType == LocomotionType.SWIM) {
       let anim = this.scene.animations[AnimationId.SWIM_STOP];
       this.item.animState.setAnim(anim, anim.firstFrame);
       return State.SWIM_STOP;
     }
 
     // Handle transition from fall or jump.
-    if (this.state_ == State.FALL || State.isJumping(this.state_)) {
+    if (this.state == State.FALL || State.isJumping(this.state)) {
       let anim;
       if (this.item.animState.anim.id == AnimationId.SWAN_DIVE) {
         anim = this.scene.animations[AnimationId.SWAN_DIVE_TO_SWIM];
@@ -1113,54 +1199,56 @@ export class Lara extends Controller {
       return State.SWIM;
     }
   
-    let jump = this.input_.jump;
+    let jump = this.input.jump;
     if (jump) {
       return State.SWIM;
     }
     
-    if (this.state_ == State.SWIM_INERTIA || this.state_ == State.STOP) {
+    if (this.state == State.SWIM_INERTIA || this.state == State.STOP) {
       return State.SWIM_STOP;
     }
   
     return State.SWIM_INERTIA;
   }
 
-  private getStateTreadWater_() {
+  private getStateTreadWater() {
     // Handle transition from swim.
-    if (this.state_ == State.SWIM ||
-        this.state_ == State.SWIM_INERTIA ||
-        this.state_ == State.SWIM_STOP ) {
-      if (this.item.room.underwater()) {
-        this.item.room = this.sector_.roomAbove;
-        this.sector_ = this.item.room.getSectorByPosition(this.item.position);
+    if (this.state == State.SWIM ||
+        this.state == State.SWIM_INERTIA ||
+        this.state == State.SWIM_STOP ) {
+      if (this.item.room.isUnderwater()) {
+        this.item.room = this.sector.roomAbove;
+        this.sector = this.item.room.getSectorByPosition(this.item.position);
       }
       let anim = this.scene.animations[AnimationId.SWIM_TO_TREAD_WATER];
       this.item.animState.setAnim(anim, anim.firstFrame);
       this.item.rotation[0] = 0;
-      vec3.setFromValues(this.velocity_, 0, 0, 0);
-      this.item.position[1] = this.sector_.floor - 32;
+      vec3.setFromValues(this.velocity, 0, 0, 0);
+      this.item.position[1] = this.sector.floor - 32;
     }
   
-    if (this.grabSector_ != null &&
-        this.input_.forward && this.input_.action) {
+    if (this.grabSector != null &&
+        this.input.forward && this.input.action) {
       let anim = this.scene.animations[AnimationId.LEAVE_WATER];
-      this.alignToAxis_();
+      this.alignToAxis();
       this.item.animState.setAnim(anim, anim.firstFrame);
-      this.grabSector_.getNearestFloorPosition(
+      this.grabSector.getNearestFloorPosition(
           this.item.position, this.item.position);
+      this.item.position[0] += 0.75 * this.radius * this.di;
+      this.item.position[2] += 0.75 * this.radius * this.dj;
       return State.WATER_OUT;
     }
   
-    if (this.input_.forward) { return State.TREAD_WATER_FORWARD; }
-    if (this.input_.backward) { return State.TREAD_WATER_BACK; }
-    if (this.input_.stepLeft) { return State.TREAD_WATER_LEFT; }
-    if (this.input_.stepRight) { return State.TREAD_WATER_RIGHT; }
-    if (this.input_.jump &&
+    if (this.input.forward) { return State.TREAD_WATER_FORWARD; }
+    if (this.input.backward) { return State.TREAD_WATER_BACK; }
+    if (this.input.stepLeft) { return State.TREAD_WATER_LEFT; }
+    if (this.input.stepRight) { return State.TREAD_WATER_RIGHT; }
+    if (this.input.jump &&
         this.item.animState.anim.id != AnimationId.SWIM_TO_TREAD_WATER) {
       let anim = this.scene.animations[AnimationId.TREAD_WATER_TO_SWIM];
       this.item.animState.setAnim(anim, anim.firstFrame);
-      this.item.position[1] = this.sector_.floor + 1;
-      this.item.room = this.sector_.getResolvedSectorByPosition(
+      this.item.position[1] = this.sector.floor + 1;
+      this.item.room = this.sector.getResolvedSectorByPosition(
           this.item.position).room;
       return State.DIVE;
     }
@@ -1168,11 +1256,11 @@ export class Lara extends Controller {
     return State.TREAD_WATER_STOP;
   }
   
-  private getStateDefault_() {
-    if (this.state_ == State.SWAN_DIVE || this.state_ == State.RUN) {
-      return this.state_;
+  private getStateDefault() {
+    if (this.state == State.SWAN_DIVE || this.state == State.RUN) {
+      return this.state;
     }
-    return this.state_;
+    return this.state;
     switch (this.locomotionType) {
       case LocomotionType.GROUND: return State.STOP;
       case LocomotionType.AIR: return State.FALL;
@@ -1184,15 +1272,15 @@ export class Lara extends Controller {
     return State.NONE;
   }
   
-  private updateState_(dt: number) {
+  private updateState(dt: number) {
     // Try and change Lara's state.
-    let targetState = this.getStateFuncs_[this.locomotionType]();
+    let targetState = this.getStateFuncs[this.locomotionType]();
     if (targetState != this.item.animState.anim.state) {
       if (!this.item.animState.tryChangeState(targetState)) {
-        let defaultState = this.getStateDefault_();
-        if (defaultState != this.state_ && defaultState != targetState) {
+        let defaultState = this.getStateDefault();
+        if (defaultState != this.state && defaultState != targetState) {
           console.log(
-              `can\'t transition from ${State[this.state_]} to` +
+              `can\'t transition from ${State[this.state]} to` +
               `${State[targetState]}', trying default ${State[defaultState]}`);
           this.item.animState.tryChangeState(defaultState);
         }
@@ -1211,30 +1299,52 @@ export class Lara extends Controller {
     let offset = this.animStateCommand.offset;
     if (offset[0] != 0 || offset[1] != 0 || offset[2] != 0) {
       // TODO(tom): the correct thing to do here is to offset Lara's position so
-      // that she's fully inside her sector after the updateSector_() call. For
+      // that she's fully inside her sector after the updateSector() call. For
       // now, just fudge the offset position.
       offset[2] += 1;
       mat4.mulVec(offset, animState.transform, offset);
       vec3.add(this.item.position, offset, this.item.position);
-      this.updateSector_();
+      this.updateSector();
     }
-  
+
     // TODO(tom): Remove this cached copy of the anim state.
-    this.state_ = this.item.animState.anim.state;
+    this.state = this.item.animState.anim.state;
   }
 
-  private updateVelocity_(dt: number) {
+  protected onAnimFrameChange() {
+    let animState = this.item.animState;
+    if (this.state == State.PICK_UP) {
+      let frame = this.item.room.isUnderwater() ? PICK_UP_FRAME_UNDERWATER :
+                                                  PICK_UP_FRAME_NORMAL;
+      if (animState.frameIdx - animState.anim.firstFrame == frame) {
+        this.interactingItem.active = false;
+        this.interactingItem.renderable = false;
+        let func = this.sector.getTrigger(TriggerType.PICK_UP);
+        if (func != null) {
+          let opcode = func.actions[1];
+          let op = (opcode >> 10) & 0xf;
+          let parameter = opcode & 0x3ff;
+          if (op != FloorFunc.Op.ITEM) { throw new Error('expected ITEM op'); }
+          if (this.scene.items[parameter] == this.interactingItem) {
+            this.scene.runFloorFunc(func, 2, 0);
+          }
+        }
+      }
+    }
+  }
+
+  private updateVelocity(dt: number) {
     let animState = this.item.animState;
   
     // Calculate turning.
     let turn = 0;
-    if (this.input_.left) {
+    if (this.input.left) {
       turn -= 1;
     }
-    if (this.input_.right) {
+    if (this.input.right) {
       turn += 1;
     }
-    switch (this.state_) {
+    switch (this.state) {
       case State.SWIM: case State.SWIM_INERTIA:
         turn *= TURN_WATER_FAST;
         break;
@@ -1271,62 +1381,63 @@ export class Lara extends Controller {
         turn = 0;
         break;
     }
-    this.item.rotation[1] += dt * turn;
+    this.item.rotation[1] = (this.item.rotation[1] + dt * turn) % (2 * Math.PI);
   
     // Calculate pitch.
-    if (State.isSwimming(this.state_)) {
+    // TODO(tom): need to continue rotating during swan dive.
+    if (State.isSwimming(this.state)) {
       let pitch = 0;
-      if (this.input_.forward) {
+      if (this.input.forward) {
         pitch -= TURN_WATER_SLOW;
       }
-      if (this.input_.backward) {
+      if (this.input.backward) {
         pitch += TURN_WATER_SLOW;
       }
       
       this.item.rotation[0] += dt * pitch;
       this.item.rotation[0] =
-          Math.max(-0.45 * Math.PI, Math.min(0.45 * Math.PI, this.item.rotation[0]));
+          Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.item.rotation[0]));
     } else if (animState.anim.id == AnimationId.TREAD_WATER_TO_SWIM) {
       this.item.rotation[0] =
           -(animState.frameIdx - animState.anim.firstFrame + animState.frameOfs) / 25;
-    } else {
+    } else if (this.state != State.DIVE) {
       this.item.rotation[0] = 0;
     }
   
     let speedX = 0;
     let speedZ = 0;
     if (this.locomotionType == LocomotionType.AIR) {
-      if (this.velocity_[1] < 0) {
-        let sector = this.item.room.getSectorByGrid(this.i_, this.j_);
+      if (this.velocity[1] < 0) {
+        let sector = this.item.room.getSectorByGrid(this.i, this.j);
         let ceiling = sector.getCeilingAt(this.item.position);
-        if (this.item.position[1] - this.height_ < ceiling) {
-          this.velocity_[1] = 0;
+        if (this.item.position[1] - this.height < ceiling) {
+          this.velocity[1] = 0;
         }
       }
-      this.velocity_[1] += GRAVITY * dt;
+      this.velocity[1] += GRAVITY * dt;
     } else if (this.locomotionType == LocomotionType.SWIM) {
       // Calculate a framerate independent scale factor.
       let scale = Math.exp(dt * Math.log(0.06));
-      vec3.scale(this.velocity_, scale, this.velocity_);
-      if (this.state_ == State.SWIM || this.state_ == State.DIVE) {
-        this.velocity_[2] = Math.min(45, this.velocity_[2] + 150 * dt);
+      vec3.scale(this.velocity, scale, this.velocity);
+      if (this.state == State.SWIM || this.state == State.DIVE) {
+        this.velocity[2] = Math.min(45, this.velocity[2] + 150 * dt);
       }
     } else if (this.locomotionType == LocomotionType.TREAD_WATER) {
       // Calculate a framerate independent scale factor.
       let scale = Math.exp(dt * Math.log(0.06));
-      vec3.scale(this.velocity_, scale, this.velocity_);
-      switch (this.state_) {
+      vec3.scale(this.velocity, scale, this.velocity);
+      switch (this.state) {
         case State.TREAD_WATER_FORWARD:
-          this.velocity_[2] = Math.min(20, this.velocity_[2] + 40 * dt);
+          this.velocity[2] = Math.min(20, this.velocity[2] + 40 * dt);
           break;
         case State.TREAD_WATER_BACK:
-          this.velocity_[2] = Math.max(-10, this.velocity_[2] - 20 * dt);
+          this.velocity[2] = Math.max(-10, this.velocity[2] - 20 * dt);
           break;
         case State.TREAD_WATER_LEFT:
-          this.velocity_[0] = Math.max(-15, this.velocity_[0] - 30 * dt);
+          this.velocity[0] = Math.max(-15, this.velocity[0] - 30 * dt);
           break;
         case State.TREAD_WATER_RIGHT:
-          this.velocity_[0] = Math.min(15, this.velocity_[0] + 30 * dt);
+          this.velocity[0] = Math.min(15, this.velocity[0] + 30 * dt);
           break;
       }
     } else {
@@ -1334,7 +1445,7 @@ export class Lara extends Controller {
       //let numFrames = 1 + animState.anim.lastFrame - animState.anim.firstFrame;
       let t = (frameNum + animState.frameOfs);
       let speed = animState.anim.speed + t * animState.anim.accel;
-      switch (this.state_) {
+      switch (this.state) {
         case State.SHIMMY_LEFT:
         case State.STEP_LEFT:
         case State.JUMP_LEFT:
@@ -1355,15 +1466,15 @@ export class Lara extends Controller {
           speedZ = speed;
           break;
       }
-      this.velocity_[0] = speedX;
-      this.velocity_[1] = 0;
-      this.velocity_[2] = speedZ;
+      this.velocity[0] = speedX;
+      this.velocity[1] = 0;
+      this.velocity[2] = speedZ;
     }
   
     let jump = this.animStateCommand.jump;
     if (jump[0] != 0) {
       speedZ = jump[1];
-      switch (this.state_) {
+      switch (this.state) {
         case State.JUMP_BACK:
           speedZ = -speedZ;
           break;
@@ -1376,21 +1487,21 @@ export class Lara extends Controller {
           speedZ = 0;
           break;
       }
-      this.velocity_[0] = speedX;
-      this.velocity_[1] = jump[0];
-      this.velocity_[2] = speedZ;
+      this.velocity[0] = speedX;
+      this.velocity[1] = jump[0];
+      this.velocity[2] = speedZ;
     }
   }
 
-  private updatePosition_(dt: number) {
+  private updatePosition(dt: number) {
     let item = this.item;
-    this.move_(dt);
+    this.move(dt);
   
-    let floor = this.sector_.getFloorAt(item.position);
-    let ceiling = this.sector_.getCeilingAt(item.position);
+    let floor = this.sector.getFloorAt(item.position);
+    let ceiling = this.sector.getCeilingAt(item.position);
     switch (this.locomotionType) {
       case LocomotionType.GROUND:
-        this.stepUpDown_(floor, dt);
+        this.stepUpDown(floor, dt);
         break;
   
       case LocomotionType.SLIDE:
@@ -1398,44 +1509,44 @@ export class Lara extends Controller {
         break;
   
       case LocomotionType.SWIM:
-        item.position[1] += FPS * dt * this.velocity_[1];
-        item.position[1] = Math.min(floor - this.radius_, item.position[1]);
-        item.position[1] = Math.max(ceiling + this.radius_, item.position[1]);
+        item.position[1] += FPS * dt * this.velocity[1];
+        item.position[1] = Math.min(floor - this.radius, item.position[1]);
+        item.position[1] = Math.max(ceiling + this.radius, item.position[1]);
         break;
   
       default:
         item.position[1] = Math.min(
-            item.position[1] + FPS * dt * this.velocity_[1], floor);
+            item.position[1] + FPS * dt * this.velocity[1], floor);
         break;
     }
   
     item.animState.updateTransform(item.position, item.rotation);
   
     // Calculate Lara's sector grid row and column.
-    this.i_ = Math.floor(this.item.position[0] / 1024);
-    this.j_ = Math.floor(this.item.position[2] / 1024);
+    this.i = Math.floor(this.item.position[0] / 1024);
+    this.j = Math.floor(this.item.position[2] / 1024);
   
     // Figure out the primary cartesian direction Lara is facing.
     let dx = item.animState.transform[8];
     let dz = item.animState.transform[10];
   
-    this.di_ = 0;
-    this.dj_ = 0;
+    this.di = 0;
+    this.dj = 0;
     if (Math.abs(dx) > Math.abs(dz)) {
-      this.di_ = Math.sign(dx);
+      this.di = Math.sign(dx);
     } else {
-      this.dj_ = Math.sign(dz);
+      this.dj = Math.sign(dz);
     }
   
-    this.findGrabSector_();
+    this.findGrabSector();
   }
 
-  private stepUpDown_(floor: number, dt: number) {
+  private stepUpDown(floor: number, dt: number) {
     // Don't apply step up/down rules when pushing or pulling blocks, since
     // the block changes the height of the sector that Lara is standing on before
     // the animation finishes.
-    if (this.state_ == State.PUSH_BLOCK ||
-        this.state_ == State.PULL_BLOCK) {
+    if (this.state == State.PUSH_BLOCK ||
+        this.state == State.PULL_BLOCK) {
       return;
     }
   
@@ -1457,21 +1568,21 @@ export class Lara extends Controller {
     if (floor < item.position[1]) {
       item.position[1] = Math.max(
           floor, item.position[1] - STEP_UP_DOWN_SPEED * dt);
-      if (floorDelta >= 128 && (this.state_ == State.WALK || this.state_ == State.RUN)) {
+      if (floorDelta >= 128 && (this.state == State.WALK || this.state == State.RUN)) {
         if (onLeftFoot) {
-          stepId = this.state_ == State.WALK ? AnimationId.WALK_STEP_UP_L : AnimationId.RUN_STEP_UP_L;
+          stepId = this.state == State.WALK ? AnimationId.WALK_STEP_UP_L : AnimationId.RUN_STEP_UP_L;
         } else {
-          stepId = this.state_ == State.WALK ? AnimationId.WALK_STEP_UP_R : AnimationId.RUN_STEP_UP_R;
+          stepId = this.state == State.WALK ? AnimationId.WALK_STEP_UP_R : AnimationId.RUN_STEP_UP_R;
         }
       }
     } else if (floor> item.position[1]) {
       item.position[1] = Math.min(
           floor, item.position[1] + STEP_UP_DOWN_SPEED * dt);
-      if (floorDelta >= 128 && (this.state_ == State.WALK || this.state_ == State.BACK)) {
+      if (floorDelta >= 128 && (this.state == State.WALK || this.state == State.BACK)) {
         if (onLeftFoot) {
-          stepId = this.state_ == State.WALK ? AnimationId.WALK_STEP_DOWN_L : AnimationId.BACKSTEP_DOWN_L;
+          stepId = this.state == State.WALK ? AnimationId.WALK_STEP_DOWN_L : AnimationId.BACKSTEP_DOWN_L;
         } else {
-          stepId = this.state_ == State.WALK ? AnimationId.WALK_STEP_DOWN_R : AnimationId.BACKSTEP_DOWN_L;
+          stepId = this.state == State.WALK ? AnimationId.WALK_STEP_DOWN_R : AnimationId.BACKSTEP_DOWN_L;
         }
       }
     }
@@ -1486,48 +1597,48 @@ export class Lara extends Controller {
     }
   }
   
-  private updateSector_() {
+  private updateSector() {
     let room = this.item.room;
     let position = this.item.position;
   
-    this.sector_ = this.sector_.getResolvedSectorByPosition(position);
-    this.item.room = this.sector_.room;
+    this.sector = this.sector.getResolvedSectorByPosition(position);
+    this.item.room = this.sector.room;
   
-    if (this.sector_ != this.prevSector_) {
-      this.updateTriggers_();
-      this.prevSector_ = this.sector_;
+    if (this.sector != this.prevSector) {
+      this.updateTriggers();
+      this.prevSector = this.sector;
     }
   }
 
-  private logFloorData_() {
-    if (this.sector_.floorData.funcs.length == 0) {
+  private logFloorData() {
+    if (this.sector.floorData.funcs.length == 0) {
       return;
     }
   
     let lines = [];
-    for (let i = 0; i < this.sector_.floorData.funcs.length; ++i) {
-      let func = this.sector_.floorData.funcs[i];
-      let activationMask = func.opcodes[0] >> 9;
-      let once = (func.opcodes[0] >> 8) & 1;
+    for (let i = 0; i < this.sector.floorData.funcs.length; ++i) {
+      let func = this.sector.floorData.funcs[i];
+      let activationMask = func.actions[0] >> 9;
+      let once = (func.actions[0] >> 8) & 1;
   
-      let line = `${i} type:${FloorFunc.Type[func.type]}`;
+      let line = `${i} func:${FloorFunc.Type[func.type]}`;
       if (func.type == FloorFunc.Type.TRIGGER) {
         line +=
             ` mask:${activationMask} once: ${once}` +
-            ` func:${FloorFunc.TriggerFunc[func.sub]} (${func.sub})`;
+            ` trigger:${TriggerType[func.sub]} (${func.sub})`;
       };
       lines.push(line);
   
-      for (var j = 1; j < func.opcodes.length; ++j) {
-        var opcode = func.opcodes[j];
+      for (let j = 1; j < func.actions.length; ++j) {
+        let opcode = func.actions[j];
         let op = (opcode >> 10) & 0xf;
-        let operand = opcode & 0x3ff;
+        let parameter = opcode & 0x3ff;
   
         switch (op) {
           case FloorFunc.Op.ITEM:
-            line = `item idx: ${operand}`;
-            if (operand < this.scene.items.length) {
-              let itemType = this.scene.items[operand].id;
+            line = `op:ITEM idx: ${parameter}`;
+            if (parameter < this.scene.items.length) {
+              let itemType = this.scene.items[parameter].type;
               line += ` type:${ItemType[itemType]} (${itemType})`;
             } else {
               line += ` out of range (${this.scene.items.length})`;
@@ -1535,26 +1646,33 @@ export class Lara extends Controller {
             break;
   
           case FloorFunc.Op.PLAY_MUSIC:
-            line = `music ${operand}`;
+            line = `op:PLAY_MUSIC ${parameter}`;
             break;
   
           case FloorFunc.Op.SECRET:
-            line = `secret ${operand}`;
+            line = `op:SECRET ${parameter}`;
+            break;
+
+          case FloorFunc.Op.CAMERA_SWITCH:
+            let parameter2 = func.actions[j++];
+            let time = parameter2 & 0xff;
+            let once = ((parameter2 >> 8) & 1) == 0;
+            let moveTimer = (parameter2 >> 9) & 0x1f;
+            line = `op:CAMERA idx:${parameter} time:${time} once:${once} move:${moveTimer}`;
             break;
   
-          case FloorFunc.Op.CLOCK_CONTROL:
-          case FloorFunc.Op.CAMERA_SWITCH:
+          case FloorFunc.Op.FLIP_EFFECT:
           case FloorFunc.Op.UNDERWATER_CURRENT:
-          case FloorFunc.Op.ALTERNATE_ROOM:
-          case FloorFunc.Op.ROOM_FLAGS_0:
-          case FloorFunc.Op.ROOM_FLAGS_1:
+          case FloorFunc.Op.FLIP_MAP:
+          case FloorFunc.Op.FLIP_ON:
+          case FloorFunc.Op.FLIP_OFF:
           case FloorFunc.Op.LOOK_AT:
           case FloorFunc.Op.END_LEVEL:
-            line = FloorFunc.Op[op].toLowerCase() + ' 0x' + operand.toString(16);
+            line = `op:${FloorFunc.Op[op]} 0x${parameter.toString(16)}`;
             break;
   
           default:
-            line = `unknown<${op}> 0x${operand.toString(16)}`;
+            line = `op:UNKNOWN<${op}> 0x${parameter.toString(16)}`;
             break;
         }
   
@@ -1564,56 +1682,50 @@ export class Lara extends Controller {
   
     console.log(lines.join('\n'));
   }
- 
 
-  private updateTriggers_() {
-    this.logFloorData_();
+  private updateTriggers() {
+    this.logFloorData();
+    let funcs = this.sector.getTriggers((func: FloorFunc) => {
+      return (func.sub == TriggerType.TRIGGER_ON ||
+              func.sub == TriggerType.TRIGGER_OFF ||
+              func.sub == TriggerType.PAD_ON ||
+              func.sub == TriggerType.PAD_OFF);
+    });
   
     // TODO(tom): Figure out modifiers (Lara in the air, etc).
-    for (let func of this.sector_.floorData.funcs) {
-      let activationMask = func.opcodes[0] >> 9;
-      let once = (func.opcodes[0] >> 8) & 1;
-  
-      for (let opcode of func.opcodes) {
-        let op = (opcode >> 10) & 0xf;
-        let operand = opcode & 0x3ff;
-  
-        if (once || op == FloorFunc.Op.SECRET) {
-          if (this.oneOffTriggers_[operand]) {
-            continue;
-          }
-          this.oneOffTriggers_[operand] = true;
-        }
-  
-        // TODO(tom): Implement the rest of the functions
-        switch (op) {
-          case FloorFunc.Op.ITEM:
-            break;
-  
-          case FloorFunc.Op.PLAY_MUSIC:
-            audio.playTrack(operand);
-            break;
-  
-          case FloorFunc.Op.SECRET:
-            audio.playSecret();
-            break;
-        }
+    for (let func of funcs) {
+      let triggerState;
+      if (func.sub == TriggerType.TRIGGER_ON ||
+          func.sub == TriggerType.PAD_ON) {
+        triggerState = 1;
+      } else {
+        triggerState = 0;
       }
+      this.scene.runFloorFunc(func, 1, triggerState);
     }
   }
 
-  debugString() {
-    let state = State[this.state_];
+  toString() {
+    let state = State[this.state];
     let locomotion = LocomotionType[this.locomotionType];
     let speed = this.item.animState.anim.speed;
     let accel = this.item.animState.anim.accel;
-    let vel = this.velocity_;
+    let pos = this.item.position;
+    let vel = this.velocity;
+    let rot = this.item.rotation;
     let parts = [
-        `room: ${this.item.room.id}`,
+        `lara room: ${this.item.room.id}`,
+        `i: ${this.i} j: ${this.j} di: ${this.di} dj: ${this.dj}`,
         `locomotion: ${locomotion} state: ${state}`,
         `speed: ${speed.toFixed(1)} accel: ${accel.toFixed(1)}`,
+        `position: ${pos[0].toFixed(1)} ${pos[1].toFixed(1)} ${pos[2].toFixed(1)}`,
+        `rotation: ${rot[0].toFixed(2)} ${rot[1].toFixed(2)} ${rot[2].toFixed(2)}`,
         `velocity: ${vel[0].toFixed(1)} ${vel[1].toFixed(1)} ${vel[2].toFixed(1)}`,
     ];
     return parts.join('\n');
   }
+}
+
+export function isLara(controller: Controller): controller is Lara {
+  return controller.item.type == ItemType.LARA;
 }

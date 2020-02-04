@@ -40,7 +40,6 @@ vec2 calculateST(vec2 p, vec2 p0, vec2 p1, vec2 p2, vec2 p3) {
     } else {
       s = (ab + sqrtbsqmac) / am2bpc;
     }
-    //s = clamp(s, -0.1, 1.1);
   }
 
   vec2 ps1 = mix(p0, p1, s);
@@ -48,5 +47,9 @@ vec2 calculateST(vec2 p, vec2 p0, vec2 p1, vec2 p2, vec2 p3) {
   vec2 ps12 = ps2 - ps1;
   t = dot(p - ps1, ps12) / dot(ps12, ps12);
 
-  return vec2(s, t);
+  // ST needs to be clamped to handle multisampling where the sample point
+  // is outside the polygon. Centroid sampling doesn't work here for some
+  // reason, perhaps because the final UV values are computed?
+  // TODO(tom): look into why centroid sampling isn't sufficient.
+  return clamp(vec2(s, t), vec2(0), vec2(1));
 }

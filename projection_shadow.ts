@@ -185,15 +185,15 @@ export class ProjectionShadow {
     ctx.setUniform('duv', 0, 1.0 / this.resolution);
     ctx.draw(this.vas.blur);
 
-
-
     let p = this.item.position;
     mat4.setTranslate(this.world, p[0], p[1], p[2]);
     mat4.mul(this.worldViewProj, viewProj, this.world);
 
-
     ctx.bindFramebuffer(null);
     ctx.enable(GL.BLEND);
+    ctx.blendFunc(GL.ONE, GL.ONE_MINUS_SRC_ALPHA);
+    ctx.enable(GL.POLYGON_OFFSET_FILL);
+    ctx.polygonOffset(-0.5, -1);
     ctx.useProgram(this.shaders.projection);
     ctx.bindTexture('tex', this.fb.color[0]);
     ctx.setUniform('viewProj', viewProj);
@@ -202,6 +202,7 @@ export class ProjectionShadow {
 
     this.vas.projection.setVertexData('position', this.vertices.data, this.vertices.length / 3);
     ctx.draw(this.vas.projection);
+    ctx.disable(GL.POLYGON_OFFSET_FILL);
     ctx.disable(GL.BLEND);
   }
 }

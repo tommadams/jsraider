@@ -21,11 +21,6 @@ export class TriBatch {
   uvs: VertexBuffer[] = [];
 
   constructor(ctx: Context, buffer: TriBuffer) {
-    // POS SCALE
-    // for (let i = 0; i < buffer.positions.length; ++i) {
-    //   buffer.positions[i] /= 1024;
-    // }
-
     this.attributes = buffer.attributes;
     this.va = ctx.newVertexArray({
       position: {size: 3, data: buffer.positions},
@@ -52,11 +47,6 @@ export class QuadBatch {
   uvs: VertexBuffer[] = [];
 
   constructor(ctx: Context, buffer: QuadBuffer) {
-    // POS SCALE
-    // for (let i = 0; i < buffer.positions.length; ++i) {
-    //   buffer.positions[i] /= 1024;
-    // }
-
     this.attributes = buffer.attributes;
     this.va = ctx.newVertexArray({
       position: {size: 3, data: buffer.positions},
@@ -91,11 +81,8 @@ export class BatchBuilder {
                            0, 0xff, 0xff, 0xff,
                            0, 0xff, 0xff, 0xff,
                            0, 0xff, 0xff, 0xff]);
-  // TODO(tom): replace with Map<number, TriBuffer>;
-  triBuffers: {[key: string]: TriBuffer} = {}
-
-  // TODO(tom): replace with Map<number, QuadBuffer>;
-  quadBuffers: {[key: string]: QuadBuffer} = {}
+  triBuffers = new Map<number, TriBuffer>();
+  quadBuffers = new Map<number, QuadBuffer>();
 
   // TODO(tom): use Uint8Array for colors?
   constructor(public positions: Float32Array|Int16Array,
@@ -108,10 +95,10 @@ export class BatchBuilder {
           color: number[]|null) {
     let numFrames = texture.animTex != null ? texture.animTex.textures.length : 1;
     let key = texture.attributes | (numFrames << 16);
-    let buffer = this.quadBuffers[key];
+    let buffer = this.quadBuffers.get(key);
     if (!buffer) {
       buffer = new QuadBuffer(this, texture.attributes, numFrames);
-      this.quadBuffers[key] = buffer;
+      this.quadBuffers.set(key, buffer);
     }
     buffer.addQuad(primitives, base, texture, color);
   }
@@ -120,20 +107,20 @@ export class BatchBuilder {
          color: number[]|null) {
     let numFrames = texture.animTex != null ? texture.animTex.textures.length : 1;
     let key = texture.attributes | (numFrames << 16);
-    let buffer = this.triBuffers[key];
+    let buffer = this.triBuffers.get(key);
     if (!buffer) {
       buffer = new TriBuffer(this, texture.attributes, numFrames);
-      this.triBuffers[key] = buffer;
+      this.triBuffers.set(key, buffer);
     }
     buffer.addTri(primitives, base, texture, color);
   }
 
   build(ctx: Context, triBatches: TriBatch[], quadBatches: QuadBatch[]) {
-    for (let k in this.triBuffers) {
-      triBatches.push(new TriBatch(ctx, this.triBuffers[k]));
+    for (let k of Array.from(this.triBuffers.keys()).sort()) {
+      triBatches.push(new TriBatch(ctx, this.triBuffers.get(k)));
     }
-    for (let k in this.quadBuffers) {
-      quadBatches.push(new QuadBatch(ctx, this.quadBuffers[k]));
+    for (let k of Array.from(this.quadBuffers.keys()).sort()) {
+      quadBatches.push(new QuadBatch(ctx, this.quadBuffers.get(k)));
     }
   }
 
@@ -263,7 +250,7 @@ export class QuadBuffer {
     }
   }
 
-  private addTexBounds_(frame: number, texture: AtlasObjectTexture) {
+  private addTexBounds(frame: number, texture: AtlasObjectTexture) {
     // The bilinear UV interpolation used when rendering quads takes advantage
     // of the fact that ObjectTexture's are rectangular by passing the top, left,
     // width, and height of the texture as vertex attributes, instead of four UV
@@ -279,11 +266,11 @@ export class QuadBuffer {
 
     // The first vertex should have a UV coordinate that is either the top-left,
     // or the top-right of the object texture.
-    if (texture.texBounds[1] != texture.texBounds[1]) {
+    if (texture.uvs[1] != texture.texBounds[1]) {
       throw new Error('First UV coordinate should be on the top of the texture');
     }
 
-    if (texture.uvs[0] == texture.uvs[0]) {
+    if (texture.uvs[0] == texture.texBounds[0]) {
       // Top-left.
       for (let i = 0; i < 4; ++i) {
         this.uvs[frame].push(
@@ -291,6 +278,9 @@ export class QuadBuffer {
           texture.texBounds[3]);
       }
     } else {
+      if (texture.uvs[0] != texture.texBounds[0] + texture.texBounds[2]) {
+        debugger
+      }
       // Top-right.
       for (let i = 0; i < 4; ++i) {
         this.uvs[frame].push(
@@ -418,10 +408,10 @@ export class QuadBuffer {
       for (let i = 0; i < animTex.textures.length; ++i) {
         let idx = (texture.animOffset + i) % animTex.textures.length;
         let frame = animTex.textures[idx];
-        this.addTexBounds_(i, frame);
+        this.addTexBounds(i, frame);
       }
     } else {
-      this.addTexBounds_(0, texture);
+      this.addTexBounds(0, texture);
     }
   }
 }
