@@ -53,10 +53,10 @@ export class FollowCamera extends Camera {
   getRoom() { return this.room; }
 
   update() {
-    var v = tmp0_;
-    var startPos = tmp1_;
+    let v = tmp0_;
+    let startPos = tmp1_;
 
-    var r = 8;
+    let r = 8;
 
     this.updateRawPositions_();
 
@@ -73,11 +73,11 @@ export class FollowCamera extends Camera {
         startPos, this.target.animState.meshTransforms[this.meshIdx]);
 
     // Find the target bone's sector.
-    var sector = this.target.room.getSectorByPosition(this.target.position);
+    let sector = this.target.room.getSectorByPosition(this.target.position);
     sector = sector.getResolvedSectorByPosition(startPos);
 
-    var floor = sector.getFloorAt(startPos);
-    var ceiling = sector.getCeilingAt(startPos);
+    let floor = sector.getFloorAt(startPos);
+    let ceiling = sector.getCeilingAt(startPos);
 
     startPos[1] = Math.max(ceiling + r, Math.min(floor - r, this.rawPosition1[1]));
     sector = sector.getResolvedSectorByPosition(startPos);
@@ -97,7 +97,7 @@ export class FollowCamera extends Camera {
     }
     vec3.setFromVec(this.lookAt, this.rawLookAt1);
 
-    var sector = this.room.getSectorByPosition(this.position);
+    sector = this.room.getSectorByPosition(this.position);
     floor = sector.getFloorAt(this.position);
     ceiling = sector.getCeilingAt(this.position);
     this.position[1] = Math.min(floor - 256, this.position[1]);
@@ -111,8 +111,8 @@ export class FollowCamera extends Camera {
 
   private updateRawPositions_() {
     // TODO(tom): Remove these temporaries
-    var m = mat4.newRotateY(this.target.rotation[1]);
-    var ofs = vec3.newZero();
+    let m = mat4.newRotateY(this.target.rotation[1]);
+    let ofs = vec3.newZero();
 
     mat4.getTranslation(
         this.rawPosition0,

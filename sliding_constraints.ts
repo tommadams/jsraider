@@ -23,8 +23,8 @@ export class SlidingConstraints {
   }
 
   add(n: vec3.Type) {
-    var unique = true;
-    for (var i = 0; i < this.normals.length; ++i) {
+    let unique = true;
+    for (let i = 0; i < this.normals.length; ++i) {
       if (vec3.distanceSqr(this.normals[i], n) <= EPSILON * EPSILON) {
         unique = false;
         break;
@@ -37,7 +37,7 @@ export class SlidingConstraints {
   }
 
   apply(v: vec3.Type) {
-    var n = this.normals;
+    let n = this.normals;
     switch (n.length) {
       case 0:
         // No constraints: nothing to do.
@@ -63,25 +63,25 @@ export class SlidingConstraints {
   }
 
   private updateConstraints_() {
-    var bestNormals = null;
-    var bestMaxDot = -Infinity;
+    let bestNormals = null;
+    let bestMaxDot = -Infinity;
 
     // TODO(tom): remove temp allocation.
-    var projected = vec3.newZero();
+    let projected = vec3.newZero();
 
-    for (var i = 0; i < this.normals.length; ++i) {
-      var n = this.normals[i];
-      var d = -vec3.dot(n, this.v);
+    for (let i = 0; i < this.normals.length; ++i) {
+      let n = this.normals[i];
+      let d = -vec3.dot(n, this.v);
       vec3.add(projected, this.v, vec3.scale(projected, d, n));
 
-      var candidates = [n];
-      var maxDot = -1;
-      for (var j = 0; j < this.normals.length; ++j) {
+      let candidates = [n];
+      let maxDot = -1;
+      for (let j = 0; j < this.normals.length; ++j) {
         if (i == j) {
           continue;
         }
 
-        var dot = vec3.dot(projected, this.normals[j]);
+        let dot = vec3.dot(projected, this.normals[j]);
         maxDot = Math.max(dot, maxDot);
         if (dot <= 0) {
           candidates.push(this.normals[j]);

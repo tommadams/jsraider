@@ -5,9 +5,9 @@ export let stencilRooms: boolean[] = [];
 function maybeSwapLara_(levelName: string, scene: Scene) {
   // Swap Lara's mesh when at home.
   if (levelName == 'GYM.PHD') {
-    var src = scene.moveables[5];
-    var dst = scene.moveables[0];
-    for (var i = 0; i < dst.meshes.length; ++i) {
+    let src = scene.moveables[5];
+    let dst = scene.moveables[0];
+    for (let i = 0; i < dst.meshes.length; ++i) {
       if (src.meshes[i] != null) {
         dst.meshes[i] = src.meshes[i];
       }
@@ -19,7 +19,7 @@ export function applyPostLoadHacks(levelName: string, scene: Scene) {
   if (levelName == 'LEVEL02.PHD') {
     // Room 8 in City of Vilcabamba has two overlapping sprites.
     // Remove one of them.
-    var room = scene.rooms[8];
+    let room = scene.rooms[8];
     room.sprites = new Uint16Array([room.sprites[0], room.sprites[1]]);
   }
 }
