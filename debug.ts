@@ -304,30 +304,33 @@ function drawCollision(room: Room, viewProj: mat4.Type) {
   draw.flush(viewProj, 0.1);
 }
 
-function drawTriggers(room: Room, viewProj: mat4.Type) {
+function drawTriggers(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
   let a = vec3.newZero();
   let b = vec3.newZero();
   let c = vec3.newZero();
   let d = vec3.newZero();
   let v = [a, b, c, d];
+  for (let visibleRoom of visibleRooms) {
+    let room = visibleRoom.room;
 
-  let basei = room.x / 1024;
-  let basej = room.z / 1024;
-  for (let j = basej; j < basej + room.sectorTableHeight; ++j) {
-    for (let i = basei; i < basei + room.sectorTableWidth; ++i) {
-      let sector = room.getSectorByGrid(i, j);
-      if (sector.floorData.portal != null) {
-        continue;
-      }
-      if (sector.floorData.funcs.length > 0) {
-        sector.getFloorVertex(0, 0, a);
-        sector.getFloorVertex(1, 0, b);
-        sector.getFloorVertex(0, 1, c);
-        sector.getFloorVertex(1, 1, d);
-        draw.line(v[0], v[1], YELLOW);
-        draw.line(v[2], v[3], YELLOW);
-        draw.line(v[0], v[2], YELLOW);
-        draw.line(v[1], v[3], YELLOW);
+    let basei = room.x / 1024;
+    let basej = room.z / 1024;
+    for (let j = basej; j < basej + room.sectorTableHeight; ++j) {
+      for (let i = basei; i < basei + room.sectorTableWidth; ++i) {
+        let sector = room.getSectorByGrid(i, j);
+        if (sector.floorData.portal != null) {
+          continue;
+        }
+        if (sector.floorData.funcs.length > 0) {
+          sector.getFloorVertex(0, 0, a);
+          sector.getFloorVertex(1, 0, b);
+          sector.getFloorVertex(0, 1, c);
+          sector.getFloorVertex(1, 1, d);
+          draw.line(v[0], v[1], YELLOW);
+          draw.line(v[2], v[3], YELLOW);
+          draw.line(v[0], v[2], YELLOW);
+          draw.line(v[1], v[3], YELLOW);
+        }
       }
     }
   }
@@ -351,9 +354,7 @@ export function render(
     drawLights(cameraRoom, viewProj);
   }
   if (options.triggers) {
-    for (let room of rooms) {
-      drawTriggers(room, viewProj);
-    }
+    drawTriggers(viewProj, visibleRooms);
   }
   if (options.portals) {
     drawPortals(viewProj, visibleRooms);
