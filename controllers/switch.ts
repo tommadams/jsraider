@@ -8,10 +8,8 @@ export class Switch extends Controller {
 
   constructor(item: Item, scene: Scene) {
     super(item, scene);
+    // TODO(tom): move sector into Controller base class (and remove Lara.sector).
     this.sector = this.item.room.getSectorByPosition(this.item.position);
-    if (item == scene.items[10]) {
-      (window as any)['switch'] = this;
-    }
   }
 
   update(dt: number) {

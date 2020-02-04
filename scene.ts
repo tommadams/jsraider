@@ -51,6 +51,7 @@ export enum ItemType {
 
   DART_GUN = 40,
 
+  BARRICADE = 47,
   BLOCK_1 = 48,
   BLOCK_2 = 49,
 
@@ -112,6 +113,11 @@ export enum ItemType {
   KEY_2 = 130,
   KEY_3 = 131,
   KEY_4 = 132,
+
+  KEYHOLE_1 = 137,
+  KEYHOLE_2 = 138,
+  KEYHOLE_3 = 139,
+  KEYHOLE_4 = 140,
 
   CAMERA_TARGET = 169,
   WATERFALL_SPLASH = 170,
@@ -193,8 +199,9 @@ export class Item {
   animState: AnimState = null;
   spriteSequence: SpriteSequence = null;
   active = true;
-  renderable = false;
+  renderable = true;
   room: Room;
+  controller: Controller = null;
 
   constructor(rooms: Room[], stream: Stream) {
     this.type = stream.readUint16();
@@ -234,12 +241,6 @@ export class Item {
     } else if (this.moveable == null && this.spriteSequence == null) {
       throw new Error(
           `Item ${this.type} has neither a moveable nor a sprite sequence`);
-    }
-
-    if (this.moveable != null) {
-      this.renderable = this.moveable.meshTree < scene.meshTrees.length;
-    } else {
-      this.renderable = true;
     }
   }
 

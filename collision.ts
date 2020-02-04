@@ -207,7 +207,6 @@ export function sphereCast(room: Room, p: vec3.Type, v: vec3.Type, r: number,
 
   return result;
 }
-(window as any)['sphereCast'] = sphereCast;
 
 export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number, h: number,
                               intersection: Intersection, state: State) {

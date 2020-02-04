@@ -421,8 +421,10 @@ export class Renderer {
     }
   
     // Draw sprite sequences
+    // TODO(tom): light sprites correctly. For example: near the exit of the
+    // room containing the gold idol in Vilcabamba, there is a large medikit
+    // that's supposed to be hidden in the shadows.
     for (let item of visibleRoom.spriteSequences) {
-      // TODO(tom): do we really need to create a new VertexArray for each frame?
       let frame = this.texAnimIndex_ % item.spriteSequence.batches.length;
       let batch = item.spriteSequence.batches[frame];
       ctx.setUniform('translation', item.position);

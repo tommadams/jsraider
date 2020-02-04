@@ -912,6 +912,3 @@ export namespace Animation {
     return '(' + id + ') ' + name;
   };
 }
-
-(window as any)['A'] = Animation;
-(window as any)['getAnimName'] = Animation.getName;
