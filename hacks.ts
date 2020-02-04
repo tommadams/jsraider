@@ -36,18 +36,24 @@ export function applyPostInitHacks(levelName: string, scene: Scene) {
   switch (levelName) {
     // The views from several windows in Lara's house overlap each other.
     case 'GYM.PHD':
+      // Music room windows.
+      stencilRooms[2] = true;
+      stencilRooms[6] = true;
+
+      // Gym windows.
       stencilRooms[3] = true;
       stencilRooms[4] = true;
       stencilRooms[5] = true;
-      stencilRooms[6] = true;
+
+      // Front windows.
       stencilRooms[16] = true;
       stencilRooms[17] = true;
       stencilRooms[18] = true;
       break;
 
-    // Part of the underwater section of City of Vilcabamba overlaps the first
-    // hub area.
     case 'LEVEL02.PHD':
+      // Part of the underwater section of City of Vilcabamba overlaps the first
+      // hub area.
       stencilRooms[26] = true;
       break;
   }

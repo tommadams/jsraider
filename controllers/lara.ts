@@ -167,11 +167,11 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[13];
 
       // caves - switch
-      item.position[0] = 50831;
-      item.position[1] = 7680;
-      item.position[2] = 57704;
-      item.rotation[1] = 1.5 * Math.PI;
-      item.room = this.scene.rooms[9];
+      // item.position[0] = 50831;
+      // item.position[1] = 7680;
+      // item.position[2] = 57704;
+      // item.rotation[1] = 1.5 * Math.PI;
+      // item.room = this.scene.rooms[9];
 
       // caves - secret
       // item.position[0] = 66142;
@@ -237,24 +237,24 @@ export class Lara extends Controller {
       // this.item.room = this.scene.rooms[7];
 
       // the cistern - block
-      this.item.position[0] = 46207; 
-      this.item.position[1] = -5632;
-      this.item.position[2] = 71234;
-      this.item.rotation[1] = -0.5 * Math.PI
-      this.item.room = this.scene.rooms[4];
-      this.scene.items[7].position[0] = 45568; 
-      this.scene.items[7].position[1] = -5632;
-      this.scene.items[7].position[2] = 71168;
-      this.scene.items[7].rotation[1] = -0.5 * Math.PI
-      this.scene.items[7].room = this.scene.rooms[4];
-      this.scene.items[7].room.getSectorByPosition(this.scene.items[7].position).floor -= 1024;
+      // this.item.position[0] = 46207;
+      // this.item.position[1] = -5632;
+      // this.item.position[2] = 71234;
+      // this.item.rotation[1] = -0.5 * Math.PI
+      // this.item.room = this.scene.rooms[4];
+      // this.scene.items[7].position[0] = 45568; 
+      // this.scene.items[7].position[1] = -5632;
+      // this.scene.items[7].position[2] = 71168;
+      // this.scene.items[7].rotation[1] = -0.5 * Math.PI
+      // this.scene.items[7].room = this.scene.rooms[4];
+      // this.scene.items[7].room.getSectorByPosition(this.scene.items[7].position).floor -= 1024;
     } else if (scene.name == 'LEVEL04.PHD') {
       // st francis' folly - block
-      // item.position[0] = 31217;
-      // item.position[1] = 256;
-      // item.position[2] = 36339;
-      // item.rotation[1] = 0.5 * Math.PI;
-      // item.room = this.scene.rooms[0];
+      item.position[0] = 31217;
+      item.position[1] = 256;
+      item.position[2] = 36339;
+      item.rotation[1] = 0.5 * Math.PI;
+      item.room = this.scene.rooms[0];
 
       // st francis' folly - item
       // item.position[0] = 34104;
@@ -623,12 +623,10 @@ export class Lara extends Controller {
  
       if (item.isPickup()) {
         if (item.room == room &&
-            this.item.animState.canChangeState(State.PICK_UP)) {
-          console.log(`${ItemType[item.type]} ${vec3.distance(item.position, this.item.position)}`);
-          if (vec3.distance(item.position, this.item.position) < 320) {
-            this.interactingItem = item;
-            return State.PICK_UP;
-          }
+            this.item.animState.canChangeState(State.PICK_UP) &&
+          vec3.distance(item.position, this.item.position) < 320) {
+          this.interactingItem = item;
+          return State.PICK_UP;
         }
       } else if (item.isBlock()) {
         // Lara must be near a sector edge in order to grab a block.

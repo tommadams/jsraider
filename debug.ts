@@ -27,6 +27,19 @@ let lines: Line[] = [];
 let spheres: Sphere[] = [];
 let log: HTMLElement = null;
 
+const CYAN = vec4.newFromValues(0, 1, 1, 1);
+const MAGENTA = vec4.newFromValues(1, 0, 1, 1);
+const GREEN = vec4.newFromValues(0, 1, 0, 1);
+const BLUE = vec4.newFromValues(0, 0, 1, 1);
+const YELLOW = vec4.newFromValues(1, 1, 0, 1);
+const ORANGE = vec4.newFromValues(1, 0.5, 0, 1);
+const PORTAL_BLUE = vec4.newFromValues(0, 0, 0.8, 0.3);
+const FLOOR_FLAT = vec4.newFromValues(0, 1, 0, 0.2);
+const FLOOR_SLOPE_X = vec4.newFromValues(1, 0, 0, 0.2);
+const FLOOR_SLOPE_Z = vec4.newFromValues(0, 0, 1, 0.2);
+const COLLISION_CYAN = vec4.newFromValues(0, 1, 1, 0.2);
+const BOX_RED = vec4.newFromValues(1, 0, 0, 0.5);
+
 export let draw: DynamicDraw = null;
 export let tweak: TweakObject = null;
 
@@ -41,6 +54,7 @@ export let options = {
   triggers: false,
   slowMotion: false,
   sprites: false,
+  staticMeshes: true,
   stencilPortals: true,
 };
 
@@ -70,6 +84,7 @@ export function init(context: Context) {
     {prop: 'triggers'},
     {prop: 'slowMotion'},
     {prop: 'sprites'},
+    {prop: 'staticMeshes'},
     {prop: 'stencilPortals'},
   ]);
 }
@@ -82,16 +97,8 @@ export function drawWireSphere(p: vec3.Type, r: number, col: vec4.Type) {
   spheres.push(new Sphere(p, r, col));
 }
 
-function drawOutlinePoly(verts: vec3.Type[], col: number[]) {
-  draw.polygon(verts, col);
-  let j = verts.length - 1;
-  for (let i = 0; i < verts.length; ++i) {
-    draw.line(verts[j], verts[i], [0, 0, 0]);
-    j = i;
-  }
-}
-
-function drawAnimState(cameraRoom: Room, lara: Lara) {
+// TODO(tom): rename to something else. In fact, just create a proper log.
+function drawAnimState(cameraRoom: Room, lara: Lara, visibleRooms: VisibleRoom[]) {
   // let item = (window as any)['app'].scene.items[10];
   // let animState = item.animState;
   // let parts = [];
@@ -105,9 +112,16 @@ function drawAnimState(cameraRoom: Room, lara: Lara) {
   // }
 
   let animState = lara.item.animState;
-  let parts = [`cam room:${cameraRoom.id}`, lara.toString()];
   let anim = animState.anim;
+
+  let parts = [`cam room:${cameraRoom.id}`, lara.toString()];
+  let roomIds = [];
+  for (let visibleRoom of visibleRooms) {
+    roomIds.push(visibleRoom.room.id);
+  }
+
   parts.push(
+    `visibleRooms: [${roomIds.join(', ')}]`,
     `idx:${(animState.frameIdx - anim.firstFrame)} ofs:${animState.frameOfs.toFixed(2)}`,
     anim.toString(), '', 'Commands:');
   for (let command of anim.commands) {
@@ -124,7 +138,7 @@ function drawPortals(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
     for (let portal of visibleRoom.room.portals) {
       // Portals face away from the room, so we have to reverse the winding order.
       let v = portal.vertices;
-      draw.polygon([v[3], v[2], v[1], v[0]], [0, 0, 0.8, 0.3]);
+      draw.polygon([v[3], v[2], v[1], v[0]], PORTAL_BLUE);
     }
   }
   draw.flush(viewProj, 0.1);
@@ -152,7 +166,7 @@ function drawLights(room: Room, viewProj: mat4.Type) {
  
 function drawLaraCollisions(lara: Lara, viewProj: mat4.Type) {
   for (let collision of lara.collisions) {
-    draw.wireSphere(collision.p, 64, [1, 0.5, 0]);
+    draw.wireSphere(collision.p, 64, ORANGE);
   }
 
   ctx.disable(GL.DEPTH_TEST);
@@ -177,6 +191,29 @@ function drawSprites(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
   ctx.enable(GL.DEPTH_TEST);
 }
 
+function drawStaticMeshes(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
+  let min = vec3.newZero();
+  let max = vec3.newZero();
+  for (let visibleRoom of visibleRooms) {
+    for (let mesh of visibleRoom.room.staticMeshes) {
+      let vb = mesh.staticMesh.visibilityBox;
+      draw.obb(mesh.transform,
+               vec3.setFromValues(min, vb[0], vb[2], vb[4]),
+               vec3.setFromValues(max, vb[1], vb[3], vb[5]),
+               MAGENTA);
+
+      let p = mesh.position;
+      let cb = mesh.staticMesh.collisionBox;
+      draw.obb(mesh.transform,
+               vec3.setFromValues(min, cb[0], cb[2], cb[4]),
+               vec3.setFromValues(max, cb[1], cb[3], cb[5]),
+               mesh.staticMesh.flags == 3 ? YELLOW : CYAN);
+    }
+  }
+
+  draw.flush(viewProj, 0.1);
+}
+
 function drawMoveables(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
   for (let visibleRoom of visibleRooms) {
     for (let item of visibleRoom.moveables) {
@@ -192,7 +229,7 @@ function drawMoveables(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
 
       if (item.animState != null) {
         let frame = item.animState.frame;
-        draw.obb(item.animState.transform, frame.min, frame.max, [0, 0, 1]);
+        draw.obb(item.animState.transform, frame.min, frame.max, BLUE);
       }
     }
   }
@@ -205,8 +242,8 @@ function drawMoveables(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
     for (let item of visibleRoom.moveables) {
       let transform = item.animState.meshTransforms[0];
       draw.wireSphere(
-          [transform[12], transform[13], transform[14]], 64, [0, 1, 0]);
-      draw.wireSphere(item.position, 128, [1, 1, 0]);
+          [transform[12], transform[13], transform[14]], 64, GREEN);
+      draw.wireSphere(item.position, 128, YELLOW);
     }
   }
   draw.flush(viewProj, 0.1);
@@ -221,24 +258,24 @@ function drawCollision(room: Room, viewProj: mat4.Type) {
 
       let idx = 0;
       if (sector.roomBelow == null && sector.quadCollision.length > 0) {
-        let col = [0, 1, 0, 0.2];
+        let col = FLOOR_FLAT;
         let sx = Math.abs(sector.floorData.floorSlope[0]);
         let sz = Math.abs(sector.floorData.floorSlope[1]);
         if (sx > 512 || sz > 512) {
           if (sx >= sz) {
-            col = [1, 0, 0, 0.2];
+            col = FLOOR_SLOPE_X;
           } else if (sx < sz) {
-            col = [0, 0, 1, 0.2];
+            col = FLOOR_SLOPE_Z;
           }
         }
-        drawOutlinePoly(sector.quadCollision[idx++], col);
+        draw.outlinePolygon(sector.quadCollision[idx++], col);
       }
 
       while (idx < sector.quadCollision.length) {
-        drawOutlinePoly(sector.quadCollision[idx++], [0, 1, 1, 0.2]);
+        draw.outlinePolygon(sector.quadCollision[idx++], COLLISION_CYAN);
       }
       for (let collision of sector.triCollision) {
-        drawOutlinePoly(collision, [0, 1, 1, 0.2]);
+        draw.outlinePolygon(collision, COLLISION_CYAN);
       }
     }
   }
@@ -260,7 +297,7 @@ function drawCollision(room: Room, viewProj: mat4.Type) {
       vec3.newFromValues(box.zmax, box.floor, box.zmax),
       vec3.newFromValues(box.zmin, box.floor, box.zmax),
     ];
-    drawOutlinePoly(poly, [1, 0, 0, 0.5]);
+    draw.outlinePolygon(poly, BOX_RED);
   }
   */
 
@@ -287,10 +324,10 @@ function drawTriggers(room: Room, viewProj: mat4.Type) {
         sector.getFloorVertex(1, 0, b);
         sector.getFloorVertex(0, 1, c);
         sector.getFloorVertex(1, 1, d);
-        draw.line(v[0], v[1], [1, 1, 0]);
-        draw.line(v[2], v[3], [1, 1, 0]);
-        draw.line(v[0], v[2], [1, 1, 0]);
-        draw.line(v[1], v[3], [1, 1, 0]);
+        draw.line(v[0], v[1], YELLOW);
+        draw.line(v[2], v[3], YELLOW);
+        draw.line(v[0], v[2], YELLOW);
+        draw.line(v[1], v[3], YELLOW);
       }
     }
   }
@@ -304,7 +341,7 @@ export function render(
   ctx.enable(GL.BLEND);
 
   if (options.animState) {
-    drawAnimState(cameraRoom, lara);
+    drawAnimState(cameraRoom, lara, visibleRooms);
   }
   if (options.collision) {
     drawCollision(cameraRoom, viewProj);
@@ -327,6 +364,9 @@ export function render(
   if (options.moveables) {
     drawMoveables(viewProj, visibleRooms);
     drawLaraCollisions(lara, viewProj);
+  }
+  if (options.staticMeshes) {
+    drawStaticMeshes(viewProj, visibleRooms);
   }
 
   if (lines.length > 0 || spheres.length > 0) {

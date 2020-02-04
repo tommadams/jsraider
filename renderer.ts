@@ -22,16 +22,7 @@ import {ProjectionShadow} from 'projection_shadow';
 import {Item, Room, Scene} from 'scene';
 import {Culler, VisibleRoom} from 'visibility';
 
-// TAA
-// Keep previous frame's data
-//   previous: result buffer, normals / depths, view matrix
-// Reproject current frame -> previous frame
-//   current view pos * view inverse * previous view
-//   Sample previous frame's result, blend with current
-//   Reject sample if normals/depths differ too much
-
 let tmp = vec3.newZero();
-
 
 export class Renderer {
   ctx: Context;
@@ -156,29 +147,9 @@ export class Renderer {
       quad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs'),
       tri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs'),
       sprite: ctx.newShaderProgram('shaders/sprite.vs', 'shaders/sprite.fs'),
-      // motionBlur: new raider.shaders.MotionBlur(ctx),
-      // sharpen: new raider.shaders.Sharpen(ctx),
-      // velocity: new raider.shaders.Velocity(ctx)
     };
 
     this.portalDraw_ = new DynamicDraw(ctx);
-
-    /*
-    //this.taaBlend_ = 1;
-
-    this.viewProjOffsets_ = this.calculateViewProjOffsets_(256);
-    this.viewProjOffsetIdx_ = 0;
-
-    this.copyTexVb_ = new toybox.VertexBuffer(ctx, 2, new Float32Array([
-        0, 0,   1, 0,   1, 1,
-        0, 0,   1, 1,   0, 1]));
-
-    // Parameters for temporal antialiasing resolve.
-    //this.taaContrastScale_ = 16;
-    //this.taaVelocityScale_ = 8;
-    //this.taaMinBlend_ = 0;
-    //this.taaMaxBlend_ = 0.95;
-     */
   }
 
   render(time: number, cameraTransform: mat4.Type, room: Room) {
@@ -246,58 +217,6 @@ export class Renderer {
       debug.render(
           this.lara_, room, this.scene_.rooms, this.viewProj_, visibleRooms);
     });
-  
-    // // Velocity pass.
-    // ctx.bindFrameBuffer(this.velocityFb_);
-    // ctx.clear(GL.COLOR_BUFFER_BIT);
-    // this.ctx.depthMask(false);
-    // this.drawSceneVelocity_(visibleRooms);
-  
-    // // Temporal antialiasing resolve.
-    // let prevTex, resolveTex;
-    // if (this.resolveFb_.colorTex == this.aaTexs_[0]) {
-    //   prevTex = this.aaTexs_[0];
-    //   resolveTex = this.aaTexs_[1];
-    // } else {
-    //   prevTex = this.aaTexs_[1];
-    //   resolveTex = this.aaTexs_[0];
-    // }
-    // this.resolveFb_.bindTextures(resolveTex, null);
-    // ctx.bindFrameBuffer(this.resolveFb_);
-  
-    // ctx.disable(GL.DEPTH_TEST);
-    // ctx.depthMask(false);
-    // ctx.colorMask(true, true, true, true);
-  
-    // ctx.bindShader(this.shaders.taaResolve);
-    // ctx.bindVertexBuffer('position', this.copyTexVb_);
-    // ctx.bindTexture('prevColorTex', prevTex);
-    // ctx.bindTexture('currColorTex', this.sceneFb_.colorTex);
-    // ctx.bindTexture('currDepthTex', this.sceneFb_.depthTex);
-    // ctx.bindTexture('velocityTex', this.velocityFb_.colorTex);
-    // ctx.setUniform('blend', this.taaBlend_);
-    // ctx.setUniform('duv', 1 / this.ctx.canvas.width, 1 / this.ctx.canvas.height);
-    // ctx.setUniform('contrastScale', this.taaContrastScale_);
-    // ctx.setUniform('velocityScale', this.taaVelocityScale_);
-    // ctx.setUniform('minBlend', this.taaMinBlend_);
-    // ctx.setUniform('maxBlend', this.taaMaxBlend_);
-    // ctx.drawArrays(GL.TRIANGLES, 0, this.copyTexVb_.numVertices);
-  
-    // Draw to back buffer.
-    // if (raider.debug.enabled('motionblur')) {
-    //   ctx.bindShader(this.shaders.motionBlur);
-    //   ctx.bindVertexBuffer('position', this.copyTexVb_);
-    //   ctx.bindTexture('colorTex', resolveTex);
-    //   ctx.bindTexture('velocityTex', this.velocityFb_.colorTex);
-    //   ctx.drawArrays(GL.TRIANGLES, 0, this.copyTexVb_.numVertices);
-    // } else {
-    //   ctx.bindShader(this.shaders.copyTex);
-    //   ctx.bindVertexBuffer('position', this.copyTexVb_);
-    //   ctx.bindTexture('tex', resolveTex);
-    //   ctx.setUniform('show_alpha', raider.debug.enabled('show_alpha'));
-    //   ctx.setUniform('duv', 1 / this.ctx.canvas.width, 1 / this.ctx.canvas.height);
-    //   ctx.drawArrays(GL.TRIANGLES, 0, this.copyTexVb_.numVertices);
-    // }
   }
 
   private drawStencilPortals(room: Room, stencilValue: number) {
@@ -311,7 +230,7 @@ export class Renderer {
     ctx.stencilMask(0xff);
 
     // Write the stencil value to all visible portal pixels.
-    // TODO(tom): Use something more efficient that dynamic draw.
+    // TODO(tom): Use pre-baked vertex arrays rather dynamic draw.
     ctx.stencilFunc(GL.ALWAYS, stencilValue, 0xff);
     for (let portal of room.portals) {
       this.portalDraw_.polygon(portal.vertices, [0, 0, 0, 1]);
@@ -414,14 +333,14 @@ export class Renderer {
     if (stencilStaticMeshes) {
       ctx.enable(GL.STENCIL_TEST);
     }
-    this.drawQuadBatches_(this.identity_, this.getTint_(room, 1), room.quadBatches);
+    this.drawQuadBatches_(this.identity_, this.getTint(room, 1), room.quadBatches);
   
     for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
       let roomStaticMesh = room.renderableStaticMeshes[i];
       let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
       this.drawQuadBatches_(
           roomStaticMesh.transform,
-          this.getTint_(room, roomStaticMesh.intensity),
+          this.getTint(room, roomStaticMesh.intensity),
           mesh.quadBatches);
     }
 
@@ -439,7 +358,7 @@ export class Renderer {
         let mesh = moveable.meshes[meshIdx];
         this.drawQuadBatches_(
             animState.meshTransforms[meshIdx],
-            this.getTint_(room, item.intensity),
+            this.getTint(room, item.intensity),
             mesh.quadBatches);
       }
     }
@@ -457,14 +376,14 @@ export class Renderer {
     if (stencilStaticMeshes) {
       ctx.enable(GL.STENCIL_TEST);
     }
-    this.drawTriBatches_(this.identity_, this.getTint_(room, 1), room.triBatches);
+    this.drawTriBatches_(this.identity_, this.getTint(room, 1), room.triBatches);
   
     for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
       let roomStaticMesh = room.renderableStaticMeshes[i];
       let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
       this.drawTriBatches_(
           roomStaticMesh.transform,
-          this.getTint_(room, roomStaticMesh.intensity),
+          this.getTint(room, roomStaticMesh.intensity),
           mesh.triBatches);
     }
 
@@ -481,7 +400,7 @@ export class Renderer {
         let mesh = moveable.meshes[meshIdx];
         this.drawTriBatches_(
             animState.meshTransforms[meshIdx],
-            this.getTint_(room, item.intensity),
+            this.getTint(room, item.intensity),
             mesh.triBatches);
       }
     }
@@ -623,7 +542,7 @@ export class Renderer {
     ctx.bindFramebuffer(null);
   }
 
-  private getTint_(room: Room, lighting: number) {
+  private getTint(room: Room, lighting: number) {
     if (this.cameraUnderwater_ || room.isUnderwater()) {
       this.tint_[0] = 0.5 * lighting;
       this.tint_[1] = lighting;
@@ -637,110 +556,3 @@ export class Renderer {
   }
 }
 
-///  /**
-///   * @param {number} n
-///   * @return {!Array<!vec2.Type>}
-///   * @private
-///   */
-///  raider.Renderer.prototype.calculateViewProjOffsets_(n) {
-///    let halton = (i, b) => {
-///      let f = 1;
-///      let r = 0;
-///      while (i > 0) {
-///        f /= b;
-///        r += f * (i % b);
-///        i = Math.floor(i / b);
-///      }
-///      return r;
-///    };
-///  
-///    let result = new Array(n);
-///    for (let i = 1; i <= n; ++i) {
-///      result[i - 1] = vec2.createFromValues(halton(i, 2), halton(i, 3));
-///    }
-///    return result;
-///  }
-///  
-///  /**
-///   * @param {!mat4.Type} world
-///   * @param {!Float32Array} tint
-///   * @param {!Array.<!raider.TriBatch>} triBatches
-///   * @param {!Array.<!raider.QuadBatch>} quadBatches
-///   * @private
-///   */
-///  raider.Renderer.prototype.drawVelocityBatches_(
-///      prevWorld, currWorld, triBatches, quadBatches) {
-///    let ctx = this.ctx;
-///  
-///    mat4.multMat(this.prevViewProj_, prevWorld, this.prevWorldViewProj_);
-///    mat4.multMat(this.viewProj_, currWorld, this.worldViewProj_);
-///    ctx.setUniform('prevWorldViewProj', this.prevWorldViewProj_);
-///    ctx.setUniform('currWorldViewProj', this.worldViewProj_);
-///  
-///    for (let i = 0; i < triBatches.length; ++i) {
-///      let batch = triBatches[i];
-///      ctx.bindVertexBuffer('position', batch.positions);
-///      ctx.drawArrays(GL.TRIANGLES, 0, batch.positions.numVertices);
-///    }
-///    for (let i = 0; i < quadBatches.length; ++i) {
-///      let batch = quadBatches[i];
-///      ctx.bindVertexBuffer('position', batch.positions);
-///      ctx.bindIndexBuffer(batch.indices);
-///      ctx.drawElements(GL.TRIANGLES, batch.indices.length, GL.UNSIGNED_SHORT, 0);
-///    }
-///  }
-///  
-///  /**
-///   * @param {!raider.VisibleRoom} visibleRoom
-///   * @private
-///   */
-///  raider.Renderer.prototype.drawRoomVelocity_(visibleRoom) {
-///    let ctx = this.ctx;
-///    let room = visibleRoom.room;
-///  
-///    this.drawVelocityBatches_(
-///        this.identity_, this.identity_, room.triBatches, room.quadBatches);
-///  
-///    for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
-///      let roomStaticMesh = room.renderableStaticMeshes[i];
-///      let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
-///      let transform = roomStaticMesh.transform;
-///      this.drawVelocityBatches_(
-///          transform, transform, mesh.triBatches, mesh.quadBatches);
-///    }
-///  
-///    let moveables = visibleRoom.moveables;
-///    for (let itemIdx = 0; itemIdx < moveables.length; ++itemIdx) {
-///      let item = moveables[itemIdx];
-///      let animState = item.animState;
-///      let moveable = item.moveable;
-///      for (let i = 0; i < moveable.renderableMeshIndices.length; ++i) {
-///        let meshIdx = moveable.renderableMeshIndices[i];
-///        let mesh = moveable.meshes[meshIdx];
-///        this.drawVelocityBatches_(
-///            animState.prevMeshTransforms[meshIdx],
-///            animState.meshTransforms[meshIdx],
-///            mesh.triBatches, mesh.quadBatches);
-///      }
-///    }
-///  
-///    // TODO(tom): velocities for sprites & sprite sequences
-///  }
-///  
-///  /**
-///   * @param {!Array<!raider.VisibleRoom>} visibleRooms
-///   * @private
-///   */
-///  raider.Renderer.prototype.drawSceneVelocity_(visibleRooms) {
-///    let ctx = this.ctx;
-///  
-///    ctx.depthFunc(GL.EQUAL);
-///    ctx.bindShader(this.shaders.velocity);
-///    ctx.setUniform('prevProjOffset', this.prevProjOffset_);
-///    ctx.setUniform('currProjOffset', this.currProjOffset_);
-///    for (let visibleRoomIdx = 0; visibleRoomIdx < visibleRooms.length; ++visibleRoomIdx) {
-///      let visibleRoom = visibleRooms[visibleRoomIdx];
-///      this.drawRoomVelocity_(visibleRoom);
-///    }
-///    ctx.depthFunc(GL.LEQUAL);
-///  }

@@ -1,5 +1,5 @@
 import {Controller} from 'controllers/controller';
-import {Item, ItemType, Scene, Sector} from 'scene';
+import {Item, ItemType, Scene, Sector, TriggerType} from 'scene';
 
 export const enum BlockState {
   STOP = 1,
@@ -23,6 +23,11 @@ export class Block extends Controller {
       var newSector = this.item.room.getSectorByPosition(this.item.position);
       oldSector.floor += 1024;
       newSector.floor -= 1024;
+
+      let func = newSector.getTrigger(TriggerType.HEAVY_TRIGGER);
+      if (func != null) {
+        this.scene.runFloorFunc(func, 1, 1);
+      }
     }
   }
 }

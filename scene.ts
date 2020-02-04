@@ -241,10 +241,6 @@ export class Item {
     } else {
       this.renderable = true;
     }
-
-    if (this.room.id == 24) {
-      console.log(ItemType[this.type], this);
-    }
   }
 
   isInvisible() {
@@ -940,12 +936,14 @@ export class SpriteTexture {
 export class StaticMesh {
   id: number;
   mesh: number;
-  boundingBox: Uint16Array;
+  visibilityBox: Int16Array;
+  collisionBox: Int16Array;
   flags: number;
   constructor(stream: Stream) {
     this.id = stream.readUint32();
     this.mesh = stream.readUint16();
-    this.boundingBox = stream.readUint16Array(12);
+    this.visibilityBox = stream.readInt16Array(6);
+    this.collisionBox = stream.readInt16Array(6);
     this.flags = stream.readUint16();
   }
 }
