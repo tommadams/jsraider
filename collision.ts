@@ -244,7 +244,7 @@ export function moveCharacter(room: Room, p: vec3.Type, v: vec3.Type, r: number,
   let intersect = new intersect2d.Intersection2d();
   let candidates = [];
 
-  // Check for intersections between all the neighboring sectors and the swept
+  // Check for intersections between all the neighbouring sectors and the swept
   // circle that forms the path the character takes.
   // TODO(tom): A better approach would be to actually calculate the
   // axis-aligned rectangle that encompasses the swept circle and test all

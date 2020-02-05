@@ -43,6 +43,9 @@ const BOX_RED = vec4.newFromValues(1, 0, 0, 0.5);
 export let draw: DynamicDraw = null;
 export let tweak: TweakObject = null;
 
+// TODO(tom): repeatedly flushing and refiling the vertex array causes the GPU
+// pipeline to stall. Stop doing that.
+
 export let options = {
   animState: true,
   collision: false,

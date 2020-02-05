@@ -250,11 +250,11 @@ export class Lara extends Controller {
       // this.scene.items[7].room.getSectorByPosition(this.scene.items[7].position).floor -= 1024;
     } else if (scene.name == 'LEVEL04.PHD') {
       // st francis' folly - block
-      item.position[0] = 31217;
-      item.position[1] = 256;
-      item.position[2] = 36339;
-      item.rotation[1] = 0.5 * Math.PI;
-      item.room = this.scene.rooms[0];
+      // item.position[0] = 31217;
+      // item.position[1] = 256;
+      // item.position[2] = 36339;
+      // item.rotation[1] = 0.5 * Math.PI;
+      // item.room = this.scene.rooms[0];
 
       // st francis' folly - item
       // item.position[0] = 34104;
@@ -262,6 +262,11 @@ export class Lara extends Controller {
       // item.position[2] = 40127;
       // item.rotation[1] = 0.1571;
       // item.room = this.scene.rooms[1];
+
+      // st francis' folly - item
+      vec3.setFromValues(item.position, 43136, 10752, 34307);
+      item.rotation[1] = 1.5 * Math.PI;
+      item.room = this.scene.rooms[13];
     } else if (scene.name == 'LEVLE05.PHD') {
       // colosseum
       // item.position[0] = 81537;
@@ -1324,7 +1329,7 @@ export class Lara extends Controller {
           let parameter = opcode & 0x3ff;
           if (op != FloorFunc.Op.ITEM) { throw new Error('expected ITEM op'); }
           if (this.scene.items[parameter] == this.interactingItem) {
-            this.scene.runFloorFunc(func, 2, 0);
+            this.scene.runActions(func, 2, 0);
           }
         }
       }
@@ -1711,7 +1716,7 @@ export class Lara extends Controller {
       } else {
         triggerState = 0;
       }
-      this.scene.runFloorFunc(func, 1, triggerState);
+      this.scene.runActions(func, 1, triggerState);
     }
   }
 

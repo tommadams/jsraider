@@ -48,8 +48,13 @@ export enum ItemType {
   TORSO_BOSS = 34,
   CRUMBLE_FLOOR = 35,
   SWINGING_AXE = 36,
-
+  TEETH_SPIKES = 37,
+  ROLLING_BALL = 38,
+  DART = 39,
   DART_GUN = 40,
+  LIFTING_DOOR = 41,
+  SLAMMING_DOORS = 42,
+  SWORD_OF_DAMOCLES = 43,
 
   BARRICADE = 47,
   BLOCK_1 = 48,
@@ -562,6 +567,9 @@ export namespace FloorFunc {
     PLAY_MUSIC = 8,
     FLIP_EFFECT = 9,
     SECRET = 10,
+    CLEAR_BODIES = 11,
+    FLY_BY = 12,
+    CUTSCENE = 13,
   }
 }
 
@@ -1138,7 +1146,7 @@ export class Room {
       this.staticMeshes[i] = new RoomStaticMesh(stream);
     }
 
-    this.alternateRoom = stream.readUint16();
+    this.alternateRoom = stream.readInt16();
     this.flags = stream.readUint16();
   }
 
@@ -1359,6 +1367,11 @@ export interface TextureData {
   data: Uint8Array;
 }
 
+export class FlipMap {
+  once = false;
+  activeMask = 0;
+}
+
 export class Scene {
   version: number;
   atlasObjectTextures: AtlasObjectTexture[];
@@ -1399,6 +1412,8 @@ export class Scene {
   lightTex: TextureData;
   lara: Lara;
   secretsFound: boolean[] = [];
+  flipMap: FlipMap[] = [];
+  flipped = false;
 
   constructor(public name: string, buf: ArrayBuffer, ctx: Context) {
     let stream = new Stream(buf);
@@ -1541,26 +1556,118 @@ export class Scene {
     }
     */
 
+    for (let room of this.rooms) {
+      this.flipMap.push(new FlipMap());
+    }
+
     this.createControllers();
   }
 
-  runFloorFunc(func: FloorFunc, begin: number, triggerState: number) {
-    let activationMask = func.actions[0] >> 9;
-    let once = (func.actions[0] >> 8) & 1;
+  flipRooms() {
+    for (let a of this.rooms) {
+      if (a.alternateRoom == -1) { continue; }
+      let b = this.rooms[a.alternateRoom];
+
+      console.log(`flipping ${a.id} ${b.id}`);
+
+      // Swap portal sectors.
+      for (let fd of this.floorData) {
+        if (fd.portal == a) { fd.portal = b; }
+      }
+
+      // Floor above and below;
+      for (let room of this.rooms) {
+        for (let sector of room.sectorTable) {
+          if (sector.roomBelow == a) { sector.roomBelow = b; }
+          if (sector.roomAbove == a) { sector.roomAbove = b; }
+        }
+      }
+    }
+
+    for (let i = 0; i < this.rooms.length; ++i) {
+      let a = this.rooms[i];
+      let j = a.alternateRoom;
+      if (j == -1) { continue; }
+      let b = this.rooms[j];
+      this.rooms[i] = b;
+      this.rooms[j] = a;
+      a.alternateRoom = -1;
+      b.alternateRoom = j;
+      a.id = j;
+      b.id = i;
+    }
+
+    this.flipped = !this.flipped;
+  }
+
+  /**
+   * Run all the actions in the floor func.
+   * @param func
+   * @param begin the index of actions to start from. For most triggers, `begin`
+   *        should be 1 (because index 0 is the tiggerMask, once & other flags).
+   *        For pickup or switch triggers, `begin` should be 2 because index 1
+   *        is the entity being interacted with.
+   * @param triggerState the state to set entities: 0 or 1. For example can
+   *        correspond to whether a switch is up or down.
+   */
+  runActions(func: FloorFunc, begin: number, triggerState: number) {
+    let triggerMask = func.actions[0] >> 9;
+    let once = ((func.actions[0] >> 8) & 1) != 0;
+    let needFlip = false;
+
     for (let i = begin; i < func.actions.length; ++i) {
       let action = (func.actions[i] >> 10) & 0xf;
       let parameter = func.actions[i] & 0x3ff;
       switch (action) {
-        case FloorFunc.Op.CAMERA_SWITCH:
-          let parameter2 = func.actions[i++];
-          break;
-
         case FloorFunc.Op.ITEM:
           if (parameter < this.controllers.length) {
             this.controllers[parameter].changeState(triggerState);
           } else {
             console.log(`Activate item index ${parameter} out of range`);
           }
+          break;
+
+        case FloorFunc.Op.CAMERA_SWITCH:
+          let parameter2 = func.actions[i++];
+          break;
+
+        case FloorFunc.Op.UNDERWATER_CURRENT:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.FLIP_MAP:
+          let flip = this.flipMap[parameter];
+          if (flip.once) { break; }
+          if (func.type == FloorFunc.Type.TRIGGER &&
+              func.sub == TriggerType.SWITCH) {
+            flip.activeMask ^= triggerMask;
+            if (flip.activeMask == 0x1f) {
+              flip.once = flip.once || once;
+            }
+            if ((flip.activeMask == 0x1f) != this.flipped) {
+              needFlip = true;
+            }
+          }
+          break;
+
+        case FloorFunc.Op.FLIP_ON:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.FLIP_OFF:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.LOOK_AT:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.END_LEVEL:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.FLIP_EFFECT:
+          // TODO(tom)
           break;
 
         case FloorFunc.Op.PLAY_MUSIC:
@@ -1574,7 +1681,23 @@ export class Scene {
             audio.playSecret();
           }
           break;
+
+        case FloorFunc.Op.CLEAR_BODIES:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.FLY_BY:
+          // TODO(tom)
+          break;
+
+        case FloorFunc.Op.CUTSCENE:
+          // TODO(tom)
+          break;
       }
+    }
+
+    if (needFlip) {
+      this.flipRooms();
     }
   }
 

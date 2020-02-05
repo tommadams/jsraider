@@ -246,7 +246,7 @@ export class Renderer {
     ctx.stencilFunc(GL.EQUAL, stencilValue, 0xff);
   }
 
-  // TODO(tom): also need to draw moveables if their room neighbors a visible
+  // TODO(tom): also need to draw moveables if their room neighbours a visible
   // room.
   private drawScene(visibleRooms: VisibleRoom[]) {
     let ctx = this.ctx;

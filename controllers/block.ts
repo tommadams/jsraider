@@ -26,7 +26,7 @@ export class Block extends Controller {
 
       let func = sector.getTrigger(TriggerType.HEAVY_TRIGGER);
       if (func != null) {
-        this.scene.runFloorFunc(func, 1, 1);
+        this.scene.runActions(func, 1, 1);
       }
     }
   }

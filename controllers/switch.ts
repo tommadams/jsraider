@@ -22,7 +22,7 @@ export class Switch extends Controller {
       let func = this.sector.getTrigger(TriggerType.SWITCH);
       // Skip the first 2 actions: the first action, which are the trigger
       // and switch data.
-      this.scene.runFloorFunc(func, 2, 1 - anim.state);
+      this.scene.runActions(func, 2, 1 - anim.state);
     }
   }
 }

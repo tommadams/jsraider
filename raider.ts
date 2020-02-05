@@ -135,7 +135,7 @@ class JsRaiderApp extends app.App {
     if (input.keyPressed(input.KeyCodes.T) &&
         this.activeCamera == this.flyCamera) {
       vec3.setFromVec(lara.item.position, this.flyCamera.position);
-      vec3.setFromValues(lara.item.rotation, 0, this.flyCamera.rotation[1], 0);
+      vec3.setFromValues(lara.item.rotation, 0, Math.PI + this.flyCamera.rotation[1], 0);
       lara.item.room = this.flyCamera.room;
       (lara as any).sector = lara.item.room.getSectorByPosition(lara.item.position);
       this.activeCamera = this.followCamera;
