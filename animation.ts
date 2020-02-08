@@ -9,13 +9,6 @@ import {Stream} from 'toybox/util/stream'
 
 let tmp = mat4.newZero();
 
-console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
-console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
-console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
-console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
-console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
-console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
-
 export class AnimCommand {
   constructor(public op: AnimCommand.Op, public operands: Float32Array) {};
 }
@@ -256,20 +249,26 @@ export class AnimState {
       command.clear();
     }
 
+    // Round the elapsed time up to the nearest millisecond.
+    // This is an attempt to minimise possible jitter when two 60Hz frames
+    // don't quite add get the frameOfs up to 1.
+    dt = Math.ceil(dt * 1000) / 1000;
+
     // TODO(tom): Define a global FPS constant.
     this.frameOfs += dt * 30;
     if (this.frameOfs < 1) {
       return;
     }
+    this.frameOfs = 0;
 
-    this.frameIdx += 1;
-    this.frameOfs %= 1;
-    if (this.frameIdx + 0.5 + this.frameOfs > this.anim.lastFrame) {
-    //if (this.frameIdx > this.anim.lastFrame) {
+    // Trigger animation commands before advancing to the next frame, otherwise
+    // we'll miss commands from the first frame.
+    if (this.frameIdx == this.anim.lastFrame) {
       this.triggerCommands(this.frameIdx, command);
       this.setAnim(this.anim.nextAnim, this.anim.nextFrame);
     } else {
       this.triggerCommands(this.frameIdx, null);
+      this.frameIdx += 1;
     }
   }
 
