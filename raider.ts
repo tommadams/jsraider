@@ -14,7 +14,7 @@ import {LaraBone, LocomotionType} from 'controllers/lara';
 import {FollowCamera} from 'follow_camera';
 import {FlyCamera} from 'fly_camera';
 import {Renderer} from 'renderer';
-import {ItemType, Scene} from 'scene';
+import {Scene} from 'scene';
 
 
 ///  console.log('Offset objects depth a little to prevent z-fighting on some objects');
@@ -30,9 +30,7 @@ class JsRaiderApp extends app.App {
 
   private baseTime = 0;
   private time = 0;
-  private animatedTextureDelay_ = 0;
   private activeCamera: Camera = null;
-  private debugAnim = -1;
   private renderer: Renderer = null;
 
   constructor(level: string) {
@@ -47,10 +45,13 @@ class JsRaiderApp extends app.App {
       profileHud: 'profile-hud',
     });
 
-    // TypeScript 3.4.5 CSSStyleDeclaration doesn't know about image-rendering.
-    (this.ctx.canvas.style as any)['imageRendering'] = 'pixelated';
+    this.ctx.canvas.style.imageRendering = 'pixelated';
 
-    debug.init(this.ctx);
+    debug.init(this.ctx).onChange(() => {
+      if (!this.updating) {
+        this.renderImpl();
+      }
+    });
 
     this.level = level;
 
@@ -76,6 +77,8 @@ class JsRaiderApp extends app.App {
     this.initInputHandlers();
     this.updating = true;
     this.ctx.canvas.focus();
+    debug.options.entityInfo =
+        this.scene.controllers.indexOf(this.scene.lara).toString();
   }
 
   private loadLevel(buf: ArrayBuffer) {
@@ -124,9 +127,9 @@ class JsRaiderApp extends app.App {
     audio.setListenerTransform(this.activeCamera.getTransform());
   
     if (!this.paused) {
-      // TODO(tom): maintain a separate list of active controllers.
+      // TODO(tom): maintain a list of active controllers
       for (let controller of this.scene.controllers) {
-        if (controller != null) {
+        if (controller != null && controller.item.active) {
           controller.update(dt);
         }
       }
@@ -156,9 +159,6 @@ class JsRaiderApp extends app.App {
         input.reset();
         this.updating = false;
       }
-    }
-    if (input.keyPressed(input.KeyCodes.ENTER)) {
-      this.nextAnim();
     }
     if (input.keyPressed(input.KeyCodes.P)) {
       window.open().document.write(`<img src="${this.ctx.canvas.toDataURL()}"/>`);
@@ -275,36 +275,6 @@ class JsRaiderApp extends app.App {
     } else {
       this.paused = false;
     }
-  }
-  
-  private nextAnim() {
-    this.setAnim(this.debugAnim + 1);
-    console.log(this.debugAnim, Animation.getName(this.debugAnim));
-  }
-  
-  private prevAnim() {
-    this.setAnim(this.debugAnim - 1);
-    console.log(this.debugAnim, Animation.getName(this.debugAnim));
-  }
-
-  private setAnim(id: number) {
-    let lara = this.scene.lara;
-    let anim = this.scene.animations[id];
-    this.debugAnim = id;
-
-    let animState = lara.item.animState;
-    animState.anim = anim;
-    animState.frameIdx = anim.firstFrame;
-    animState.frameOfs = 0;
-
-    animState.anim.getFrame(animState.frameIdx, animState.frameOfs, animState.frame);
-    animState.setMeshTransforms(
-        lara.item.moveable.meshCount,
-        lara.item.moveable.meshTree,
-        this.scene.meshTrees);
-
-    // TODO(tom): do we still need to explicitly call render here?
-    // this.render();
   }
 }
 

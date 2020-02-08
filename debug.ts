@@ -8,7 +8,7 @@ import {DynamicDraw} from 'toybox/gl/dynamic_draw';
 
 import {AnimCommand} from 'animation';
 import {Lara} from 'controllers/lara';
-import {Room} from 'scene';
+import {Room, Scene} from 'scene';
 import {VisibleRoom} from 'visibility';
 
 // TODO(tom): move tweakObject into main app
@@ -25,7 +25,7 @@ class Sphere {
 let ctx: Context;
 let lines: Line[] = [];
 let spheres: Sphere[] = [];
-let log: HTMLElement = null;
+let entityInfoElem: HTMLElement = null;
 
 const CYAN = vec4.newFromValues(0, 1, 1, 1);
 const MAGENTA = vec4.newFromValues(1, 0, 1, 1);
@@ -41,12 +41,12 @@ const COLLISION_CYAN = vec4.newFromValues(0, 1, 1, 0.2);
 const BOX_RED = vec4.newFromValues(1, 0, 0, 0.5);
 
 export let draw: DynamicDraw = null;
-export let tweak: TweakObject = null;
 
 // TODO(tom): repeatedly flushing and refiling the vertex array causes the GPU
 // pipeline to stall. Stop doing that.
 
 export let options = {
+  entityInfo: '0',
   animState: true,
   collision: false,
   fogStart: 4096,
@@ -61,23 +61,14 @@ export let options = {
   stencilPortals: true,
 };
 
-// TODO(tom): don't draw anim state when log isn't in view.
-
 export function init(context: Context) {
   ctx = context;
   draw = new DynamicDraw(ctx);
-  log = document.getElementById('log');
+  entityInfoElem = document.getElementById('entity-info');
 
   let elem = document.getElementById('options');
-  tweak = new TweakObject(elem, options, [
-    {
-      prop: 'animState',
-      onChange: (newValue) => {
-        if (!newValue) {
-          log.innerHTML = '';
-        }
-      },
-    },
+  return new TweakObject(elem, options, [
+    {prop: 'entityInfo'},
     {prop: 'collision'},
     {prop: 'fogStart', min: 0, max: 1024 * 16},
     {prop: 'fogDensity', min: 0, max: 1, squash: 2},
@@ -100,8 +91,7 @@ export function drawWireSphere(p: vec3.Type, r: number, col: vec4.Type) {
   spheres.push(new Sphere(p, r, col));
 }
 
-// TODO(tom): rename to something else. In fact, just create a proper log.
-function drawAnimState(cameraRoom: Room, lara: Lara, visibleRooms: VisibleRoom[]) {
+function updateEntityInfo(scene: Scene, cameraRoom: Room, lara: Lara, visibleRooms: VisibleRoom[]) {
   // let item = (window as any)['app'].scene.items[10];
   // let animState = item.animState;
   // let parts = [];
@@ -114,6 +104,22 @@ function drawAnimState(cameraRoom: Room, lara: Lara, visibleRooms: VisibleRoom[]
   //       `op: ${AnimCommand.Op[command.op]} [${command.operands.join(', ')}]`);
   // }
 
+  let idx = parseInt(options.entityInfo);
+  let controller = scene.controllers[idx];
+  if (controller == null) {
+    entityInfoElem.innerText = '';
+    return;
+  }
+  let roomIds = [];
+  for (let vr of visibleRooms) { roomIds.push(vr.room.id); }
+  let lines = [
+    `visibleRooms: [${roomIds.join(', ')}]`,
+    '',
+    controller.toString(),
+  ];
+  entityInfoElem.innerText = lines.join('\n');
+
+  /*
   let animState = lara.item.animState;
   let anim = animState.anim;
 
@@ -133,6 +139,7 @@ function drawAnimState(cameraRoom: Room, lara: Lara, visibleRooms: VisibleRoom[]
   }
 
   log.innerText = parts.join('\n');
+  */
 }
 
 function drawPortals(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
@@ -324,7 +331,8 @@ function drawTriggers(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
         if (sector.floorData.portal != null) {
           continue;
         }
-        if (sector.floorData.funcs.length > 0) {
+        if (sector.floorData.trigger != null ||
+            sector.floorData.kill) {
           sector.getFloorVertex(0, 0, a);
           sector.getFloorVertex(1, 0, b);
           sector.getFloorVertex(0, 1, c);
@@ -341,14 +349,16 @@ function drawTriggers(viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
 }
 
 export function render(
-    lara: Lara, cameraRoom: Room, rooms: Room[], viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
+    scene: Scene, cameraRoom: Room, viewProj: mat4.Type, visibleRooms: VisibleRoom[]) {
+  let lara = scene.lara;
+  let rooms = scene.rooms;
+
   ctx.depthMask(false);
   ctx.blendFunc(GL.ONE, GL.ONE_MINUS_SRC_ALPHA);
   ctx.enable(GL.BLEND);
 
-  if (options.animState) {
-    drawAnimState(cameraRoom, lara, visibleRooms);
-  }
+  updateEntityInfo(scene, cameraRoom, lara, visibleRooms);
+
   if (options.collision) {
     drawCollision(cameraRoom, viewProj);
   }

@@ -1,7 +1,8 @@
 import * as mat4 from 'toybox/math/mat4'
 import * as vec3 from 'toybox/math/vec3'
 
-import {AnimState} from 'animation'
+import {AnimCommand, AnimState} from 'animation'
+import {EntityType} from 'entity';
 import {Item, Scene} from 'scene'
 import {resolveRoomByPosition} from 'collision'
 
@@ -26,6 +27,10 @@ export class Controller {
     // Advance the animation state.
     animState.advance(dt, this.animStateCommand);
 
+    if (this.animStateCommand.kill) {
+      this.deactivate();
+    }
+
     // Apply an offset to position if one triggered during animation.
     let offset = this.animStateCommand.offset;
     if (offset[0] != 0 || offset[1] != 0 || offset[2] != 0) {
@@ -47,11 +52,50 @@ export class Controller {
     }
   }
 
+  activate() {
+    if (this.item.active) { return false; }
+    this.item.active = true;
+    this.item.visible = true;
+    return true;
+  }
+
+  deactivate() {
+    // TODO(tom): maybe the active bit should live on the controller not the item.
+    this.item.active = false;
+  }
+
   changeState(state: number) {
-    let animState = this.item.animState;
-    if (!animState.tryChangeState(state)) {
-      this.pendingState = state;
+    if (!this.item.animState.tryChangeState(state)) {
+      throw new Error(`Couldn't change ${EntityType[this.item.type]} state to ${state}`);
     }
+  }
+
+  toString() {
+    let item = this.item;
+    let pos = this.item.position;
+    let rot = this.item.rotation;
+    let animState = item.animState;
+
+    let i = Math.floor(pos[0] / 1024);
+    let j = Math.floor(pos[2] / 1024);
+    let type = EntityType[item.type];
+    if (type == null) {
+      type = `UNKNOWN<${item.type}>`;
+    }
+    let lines: string[] = [
+      `type:${type}`,
+      `room:${item.room.id}`,
+      `i:${i} j:${j}`,
+      `position:[${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}]`,
+      `rotation:[${rot[0].toFixed(2)}, ${rot[1].toFixed(2)}, ${rot[2].toFixed(2)}]`,
+      `active:${item.active} activeMask:0x${item.activeMask.toString(16)}`,
+    ];
+
+    if (animState != null) {
+      lines.push(animState.toString());
+    }
+
+    return lines.join('\n');
   }
 
   protected onAnimFrameChange() {}

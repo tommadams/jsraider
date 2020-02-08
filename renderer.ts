@@ -214,8 +214,7 @@ export class Renderer {
     ctx.profile('debug', () => {
       // TODO(tom): call this from the main app, not the renderer internals, then
       // remove Lara and possible other dependencies.
-      debug.render(
-          this.lara_, room, this.scene_.rooms, this.viewProj_, visibleRooms);
+      debug.render(this.scene_, room, this.viewProj_, visibleRooms);
     });
   }
 

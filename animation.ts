@@ -9,6 +9,13 @@ import {Stream} from 'toybox/util/stream'
 
 let tmp = mat4.newZero();
 
+console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
+console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
+console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
+console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
+console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
+console.log("ANIM COMMANDS ON FIRST FRAME DON'T GET TRIGGERED, e.g PAD DOOR IN COLOSSEUM");
+
 export class AnimCommand {
   constructor(public op: AnimCommand.Op, public operands: Float32Array) {};
 }
@@ -21,7 +28,7 @@ export namespace AnimCommand {
     EMPTY_HANDS = 3,
     KILL = 4,
     PLAY_SOUND = 5,
-    ACTION = 6
+    FLIP_EFFECT = 6
 
     //MAYBE_CAM_1 = 14,  // Maybe camera control?
     //MAYBE_CAM_2 = 15,  // Maybe camera control?
@@ -179,65 +186,61 @@ export class AnimState {
   }
 
   toString() {
-    let parts = [];
     let anim = this.anim;
-    parts.push(
-      `idx:${(this.frameIdx - anim.firstFrame)} ofs:${this.frameOfs.toFixed(2)}`,
-      anim.toString(), '', 'Commands:');
-    for (let command of anim.commands) {
-      parts.push(
-          `op: ${AnimCommand.Op[command.op]} [${command.operands.join(', ')}]`);
-    }
-    return parts.join('\n');
+    let speed = anim.speed;
+    let accel = anim.accel;
+    let state = anim.state;
+    let lines = [
+        `idx:${(this.frameIdx)} ofs:${this.frameOfs.toFixed(2)}`,
+        `speed:${speed.toFixed(1)} accel:${accel.toFixed(1)}`,
+        `state:${anim.state} (${State[anim.state]})`,
+        anim.toString()];
+    return lines.join('\n');
   }
 
-  /**
-   * Trigger any animation commands in the frame range [begin, end).
-   */
-  private triggerCommands_(frameIdx: number, out_command?: AnimState.Command) {
-    for (let command of this.anim.commands) {
-
-      /*
-      for (let name in AnimCommand.Op) {
-        // Don't log PLAY_SOUND commands.
-        if (command.op == AnimCommand.Op.PLAY_SOUND) {
-          continue;
-        }
-        if (command.op == AnimCommand.Op[name]) {
-          console.log(name + ': ' + command.operands.join(', '));
-        }
-      }
-      */
-
-      switch (command.op) {
+  private triggerCommands(frameIdx: number, command?: AnimState.Command) {
+    for (let cmd of this.anim.commands) {
+      switch (cmd.op) {
         case AnimCommand.Op.OFFSET:
-          if (out_command) {
-            console.log('offset : [' + command.operands.join(', ') + ']');
-            vec3.setFromArray(out_command.offset, command.operands);
-          }
-          break;
-
-        case AnimCommand.Op.PLAY_SOUND:
-          if (frameIdx == command.operands[0]) {
-            let x = this.transform[12];
-            let y = this.transform[13];
-            let z = this.transform[14];
-            audio.playSample(command.operands[1], x, y, z);
+          if (command != null) {
+            console.log('offset : [' + cmd.operands.join(', ') + ']');
+            vec3.setFromArray(command.offset, cmd.operands);
           }
           break;
 
         case AnimCommand.Op.JUMP:
-          if (out_command) {
-            vec2.setFromArray(out_command.jump, command.operands);
+          if (command != null) {
+            vec2.setFromArray(command.jump, cmd.operands);
           }
           break;
 
-        case AnimCommand.Op.ACTION:
-          if (out_command && frameIdx == command.operands[0]) {
-            let action = command.operands[1] & 0x3fff;
+        case AnimCommand.Op.EMPTY_HANDS:
+          if (command != null) {
+            command.emptyHands = true;
+          }
+          break;
+
+        case AnimCommand.Op.KILL:
+          if (command != null) {
+            command.kill = true;
+          }
+          break;
+
+        case AnimCommand.Op.PLAY_SOUND:
+          if (frameIdx == cmd.operands[0]) {
+            let x = this.transform[12];
+            let y = this.transform[13];
+            let z = this.transform[14];
+            audio.playSample(cmd.operands[1], x, y, z);
+          }
+          break;
+
+        case AnimCommand.Op.FLIP_EFFECT:
+          if (command != null && frameIdx == cmd.operands[0]) {
+            let action = cmd.operands[1] & 0x3fff;
             // TODO(tom): create a list of all actions
             if (action == 0) {
-              out_command.flip = true;
+              command.flip = true;
             }
           }
           break;
@@ -245,12 +248,12 @@ export class AnimState {
     }
   }
 
+  // TODO(tom): move anim command handling directly into the Controller instead
+  // of having an output command parameter.
   advance(dt: number, command: AnimState.Command) {
     // Clear the command data before doing anything.
     if (command != null) {
-      command.flip = false;
-      command.jump.fill(0);
-      command.offset.fill(0);
+      command.clear();
     }
 
     // TODO(tom): Define a global FPS constant.
@@ -263,10 +266,10 @@ export class AnimState {
     this.frameOfs %= 1;
     if (this.frameIdx + 0.5 + this.frameOfs > this.anim.lastFrame) {
     //if (this.frameIdx > this.anim.lastFrame) {
-      this.triggerCommands_(this.frameIdx, command);
+      this.triggerCommands(this.frameIdx, command);
       this.setAnim(this.anim.nextAnim, this.anim.nextFrame);
     } else {
-      this.triggerCommands_(this.frameIdx, null);
+      this.triggerCommands(this.frameIdx, null);
     }
   }
 
@@ -332,8 +335,18 @@ export class AnimState {
 export namespace AnimState {
   export class Command {
     flip = false;
+    kill = false;
+    emptyHands = false;
     jump = vec2.newZero();
     offset = vec3.newZero();
+
+    clear() {
+      this.flip = false;
+      this.kill = false;
+      this.emptyHands = false;
+      vec2.setZero(this.jump);
+      vec3.setZero(this.offset);
+    }
   }
 }
 
@@ -349,7 +362,7 @@ export class Animation {
   // Number of uint16s used by this animation.
   frameSize: number;
 
-  state: State;
+  state: number;
   speed: number;
   accel: number;
   firstFrame: number;
@@ -408,7 +421,7 @@ export class Animation {
 
         case AnimCommand.Op.JUMP:
         case AnimCommand.Op.PLAY_SOUND:
-        case AnimCommand.Op.ACTION:
+        case AnimCommand.Op.FLIP_EFFECT:
           numOperands = 2;
           break;
 
@@ -483,28 +496,33 @@ export class Animation {
   }
 
   toString() {
+    let animStr = (id: number) => {
+      return `${id} (${AnimationId[id]})`;
+    };
+
     let lines = [
-      'anim: ' + Animation.getName(this.id) +
-      ' [0, ' + (1 + this.lastFrame - this.firstFrame) + ') state: ' +
-      '(' + this.state + ') ' + State[this.state],
-      'speed: ' + this.speed.toFixed(1) +
-      ' accel: ' + this.accel.toFixed(1)
+      `anim:${animStr(this.id)} ` +
+      `[${this.firstFrame}, ${this.lastFrame}] ` +
+      `state:${this.state} (${State[this.state]}) `,
+      `speed:${this.speed.toFixed(1)} accel:${this.accel.toFixed(1)}`,
     ];
 
     for (let stateChange of this.stateChanges) {
       for (let dispatch of stateChange.animDispatches) {
         lines.push(
-            '  state: (' + stateChange.state + ') ' +
-            State[stateChange.state] +
-            ' [' + (dispatch.low - this.firstFrame) +
-            ', ' + (dispatch.high - this.firstFrame) + ')' +
-            ' -> ' + Animation.getName(dispatch.nextAnimId));
+            `  ${stateChange.state} (${State[stateChange.state]})` +
+            ` [${dispatch.low - this.firstFrame},  ${dispatch.high - this.firstFrame})` +
+            ` -> ${animStr(dispatch.nextAnimId)}`);
       }
     }
     if (this.nextAnim != this) {
-      lines.push('  next -> ' + Animation.getName(this.nextAnimId));
+      lines.push('  next -> ' + animStr(this.nextAnimId));
     }
-
+    lines.push('', 'Commands:');
+    for (let command of this.commands) {
+      lines.push(
+          `  op: ${AnimCommand.Op[command.op]} [${command.operands.join(', ')}]`);
+    }
     return lines.join('\n');
   }
 
@@ -890,25 +908,4 @@ export enum AnimationId {
   START_SWAN_DIVE_START_R = 157,
   SWAN_DIVE = 158,
   HANDSTAND_PULL_UP = 159,
-}
-
-export namespace Animation {
-  const names: string[] = function() {
-    let names = [];
-    for (let k in AnimationId) {
-      let id = parseInt(AnimationId[k]);
-      if (id >= 0) {
-        names[id] = k.toLowerCase().replace(/^_+|_+$/g, '');
-      }
-    }
-    return names;
-  }();
-
-  export function getName(id: number) {
-    let name = names[id];
-    if (name == undefined) {
-      name = '(UNDEFINED)';
-    }
-    return '(' + id + ') ' + name;
-  };
 }

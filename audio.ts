@@ -114,7 +114,7 @@ export function playTrack(track: number, mask: number) {
   }
 }
 
-function playTrackImpl(track: number, mask:number) {
+function playTrackImpl(track: number, mask: number) {
   let oldMask = playedTrackMask[track] || 0;
   if ((oldMask & mask) == 0) {
     music_.src = 'music/' + track + '.mp3';

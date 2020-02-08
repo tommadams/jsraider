@@ -12,121 +12,16 @@ import {Stream} from 'toybox/util/stream';
 
 import {Block} from 'controllers/block';
 import {Controller} from 'controllers/controller';
+import {Door} from 'controllers/door';
 import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
 import {Switch} from 'controllers/switch';
 import {QuadBatch, TriBatch} from 'batch_builder';
+import {EntityType} from 'entity';
 import * as hacks from 'hacks';
 import * as audio from 'audio';
 
-export const V1 = 0x20;
-
-export enum ItemType {
-  LARA = 0,
-
-  WOLF = 7,
-  BEAR = 8,
-  BAT = 9,
-  CROCODILE = 10,
-  CROCODILE_SWIM = 11,
-  LION_MALE = 12,
-  LION_FEMALE = 13,
-  PANTHER = 14,
-  GORILLA = 15,
-  RAT = 16,
-  RAT_SWIM = 17,
-  T_REX = 18,
-  VELOCIRAPTOR = 19,
-  ATLANTEAN_MUTANT = 20,
-
-  LARSON = 27,
-  PIERRE = 28,
-  SKATEBOARD = 29,
-  SKATEBOARD_KID = 30,
-  COWBOY = 31,
-  KIN_KADE = 32,
-  WINGED_NATLA = 33,
-  TORSO_BOSS = 34,
-  CRUMBLE_FLOOR = 35,
-  SWINGING_AXE = 36,
-  TEETH_SPIKES = 37,
-  ROLLING_BALL = 38,
-  DART = 39,
-  DART_GUN = 40,
-  LIFTING_DOOR = 41,
-  SLAMMING_DOORS = 42,
-  SWORD_OF_DAMOCLES = 43,
-
-  BARRICADE = 47,
-  BLOCK_1 = 48,
-  BLOCK_2 = 49,
-
-  SWITCH = 55,
-  UNDERWATER_SWITCH = 56,
-
-  DOOR_1 = 57,
-  DOOR_2 = 58,
-  DOOR_3 = 59,
-  DOOR_4 = 60,
-  BIG_DOOR_1 = 61,
-  BIG_DOOR_2 = 62,
-
-  TRAP_DOOR_1 = 65,
-  TRAP_DOOR_2 = 66,
-
-  BRIDGE_FLAT = 68,
-  BRIDGE_SLOPE_1 = 69,
-  BRIDGE_SLOPE_2 = 70,
-  PASSPORT_OPENING = 71,
-  COMPASS = 72,
-  LARAS_HOME_PHOTO = 73,
-  ANIMATING_1 = 74,
-  ANIMATING_2 = 75,
-  ANIMATING_3 = 76,
-  CUTSCENE_ACTOR_1 = 77,
-  CUTSCENE_ACTOR_2 = 78,
-  CUTSCENE_ACTOR_3 = 79,
-  CUTSCENE_ACTOR_4 = 80,
-  PASSPORT_CLOSED = 81,
-  UNUSED_MAP = 82,
-  SAVE_CRYSTAL = 83,
-  PISTOLS = 84,
-  SHOTGUN = 85,
-  MAGNUMS = 86,
-  UZIS = 87,
-  PISTOL_AMMO = 88,
-  SHOTGUN_AMMO = 89,
-  MAGNUM_AMMO = 90,
-  UZI_AMMO = 91,
-  UNUSED_EXPLOSIVE = 92,
-  SMALL_MEDIPACK = 93,
-  LARGE_MEDIPACK = 94,
-  // SUNGLASSES = 95,
-  // CASETTE_PLAYER = 96,
-  // DIRECTION_KEYS = 97,
-  // FLASHLIGHT = 98,
-  // PISTOLS = 99,
-  // SHOTGUN = 100,
-  // MAGNUMS = 101,
-  // UZIS = 102,
-
-  PUZZLE_1 = 110,
-  PUZZLE_2 = 111,
-  PUZZLE_3 = 112,
-  PUZZLE_4 = 113,
-
-  KEY_1 = 129,
-  KEY_2 = 130,
-  KEY_3 = 131,
-  KEY_4 = 132,
-
-  KEYHOLE_1 = 137,
-  KEYHOLE_2 = 138,
-  KEYHOLE_3 = 139,
-  KEYHOLE_4 = 140,
-
-  CAMERA_TARGET = 169,
-  WATERFALL_SPLASH = 170,
-}
+export const TR1 = 0x20;
+export const ACTIVE = 0x1f;
 
 function convertLight(l: number) {
   return 2 - l / 4096;
@@ -203,10 +98,11 @@ export class Item {
   moveable: Moveable = null;
   animState: AnimState = null;
   spriteSequence: SpriteSequence = null;
-  active = true;
-  renderable = true;
   room: Room;
   controller: Controller = null;
+  active = false;
+  reverse = false;
+  visible = true;
 
   constructor(rooms: Room[], stream: Stream) {
     this.type = stream.readUint16();
@@ -249,54 +145,62 @@ export class Item {
     }
   }
 
-  isInvisible() {
-    return (this.flags & 0x100) != 0;
+  get invisible() {
+    return (this.flags & 0x0100) != 0;
   }
 
-  activationMask() {
-    return (this.flags >> 8) & 0x3e;
+  get activeMask(): number {
+    return (this.flags & 0x3e00) >> 9;
+  }
+  set activeMask(value: number) {
+    this.flags = (this.flags & ~0x3e00) | ((value << 9) & 0x3e00);
   }
 
-  // TODO(tom): make look up tables for these.
+  // TODO(tom): make a controller type lookup table.
   isBlock() {
-    return (this.type == ItemType.BLOCK_1 ||
-            this.type == ItemType.BLOCK_2);
+    return this.type >= EntityType.BLOCK_1 && this.type <= EntityType.BLOCK_4;
   }
 
   isBridge() {
-    return (this.type == ItemType.BRIDGE_FLAT ||
-            this.type == ItemType.BRIDGE_SLOPE_1 ||
-            this.type == ItemType.BRIDGE_SLOPE_2);
+    return this.type >= EntityType.BRIDGE_FLAT && this.type <= EntityType.BRIDGE_SLOPE_2;
   }
 
-  isSwitch() {
-    return (this.type == ItemType.SWITCH ||
-            this.type == ItemType.UNDERWATER_SWITCH);
+  isDoor() {
+    return this.type >= EntityType.DOOR_1 && this.type <= EntityType.DOOR_8;
+  }
+
+  isLara() {
+    return this.type == EntityType.LARA;
   }
 
   isPickup() {
     switch (this.type) {
-      case ItemType.SHOTGUN:
-      case ItemType.MAGNUMS:
-      case ItemType.UZIS:
-      case ItemType.PISTOL_AMMO:
-      case ItemType.SHOTGUN_AMMO:
-      case ItemType.MAGNUM_AMMO:
-      case ItemType.UZI_AMMO:
-      case ItemType.UNUSED_EXPLOSIVE:
-      case ItemType.SMALL_MEDIPACK:
-      case ItemType.LARGE_MEDIPACK:
-      case ItemType.PUZZLE_1:
-      case ItemType.PUZZLE_2:
-      case ItemType.PUZZLE_3:
-      case ItemType.PUZZLE_4:
-      case ItemType.KEY_1:
-      case ItemType.KEY_2:
-      case ItemType.KEY_3:
-      case ItemType.KEY_4:
+      case EntityType.SHOTGUN:
+      case EntityType.MAGNUMS:
+      case EntityType.UZIS:
+      case EntityType.PISTOL_AMMO:
+      case EntityType.SHOTGUN_AMMO:
+      case EntityType.MAGNUM_AMMO:
+      case EntityType.UZI_AMMO:
+      case EntityType.UNUSED_EXPLOSIVE:
+      case EntityType.SMALL_MEDIPACK:
+      case EntityType.LARGE_MEDIPACK:
+      case EntityType.PUZZLE_1:
+      case EntityType.PUZZLE_2:
+      case EntityType.PUZZLE_3:
+      case EntityType.PUZZLE_4:
+      case EntityType.KEY_1:
+      case EntityType.KEY_2:
+      case EntityType.KEY_3:
+      case EntityType.KEY_4:
         return true;
     }
     return false;
+  }
+
+  isSwitch() {
+    return (this.type == EntityType.SWITCH ||
+            this.type == EntityType.UNDERWATER_SWITCH);
   }
 }
 
@@ -533,30 +437,52 @@ export class RoomStaticMesh {
   }
 }
 
-export class FloorFunc {
+export const enum FloorFuncType {
+  NONE = 0,
+  PORTAL_SECTOR = 1,
+  FLOOR_SLOPE = 2,
+  CEILING_SLOPE = 3,
+  TRIGGER = 4,
+  KILL = 5,
+  CLIMBABLE_WALL = 6,
+}
+
+export class Trigger {
+  timer: number;
+  oneShot: boolean;
+  mask: number;
   actions: number[] = [];
-  constructor(public type: number, public sub: number) {
-    if (type < 0 || type >= FloorFunc.Type.NUM_TYPES) {
-      throw new Error('Floor data function type out of range: ' + type);
-    }
+
+  constructor(public type: number, bits: number) {
+    this.timer = bits & 0xff;
+    this.oneShot = (bits & 0x8000) != 0;
+    this.mask = (bits & 0x3e00) >> 9;
   }
 }
 
-export namespace FloorFunc {
+export namespace Trigger {
   export enum Type {
-    NONE = 0,
-    PORTAL_SECTOR = 1,
-    FLOOR_SLOPE = 2,
-    CEILING_SLOPE = 3,
-    TRIGGER = 4,
-    KILL = 5,
-    CLIMBABLE_WALL = 6,
-
-    NUM_TYPES = 7,
+    TRIGGER_ON = 0,
+    PAD_ON = 1,
+    SWITCH = 2,
+    KEY = 3,
+    PICK_UP = 4,
+    HEAVY_TRIGGER = 5,
+    PAD_OFF = 6,
+    COMBAT = 7,
+    DUMMY = 8,
+    TRIGGER_OFF = 9,
+    HEAVY_SWITCH = 10,
+    HEAVY_TRIGGER_OFF = 11,
+    MONKEY = 12,
+    SKELETON = 13,
+    TIGHTROPE = 14,
+    CRAWL = 15,
+    CLIMB = 16,
   }
 
-  export enum Op {
-    ITEM = 0,
+  export enum Action {
+    ACTIVATE = 0,
     CAMERA_SWITCH = 1,
     UNDERWATER_CURRENT = 2,
     FLIP_MAP = 3,
@@ -573,32 +499,14 @@ export namespace FloorFunc {
   }
 }
 
-export enum TriggerType {
-  TRIGGER_ON = 0,
-  PAD_ON = 1,
-  SWITCH = 2,
-  KEY = 3,
-  PICK_UP = 4,
-  HEAVY_TRIGGER = 5,
-  PAD_OFF = 6,
-  COMBAT = 7,
-  DUMMY = 8,
-  TRIGGER_OFF = 9,
-  HEAVY_SWITCH = 10,
-  HEAVY_TRIGGER_OFF = 11,
-  MONKEY = 12,
-  SKELETON = 13,
-  TIGHTROPE = 14,
-  CRAWL = 15,
-  CLIMB = 16,
-}
-
 export class FloorData {
   floorSlope = vec2.newZero();
   ceilingSlope = vec2.newZero();
   portal: Room = null;
-  funcs: FloorFunc[] = [];
+  kill = false;
+  climbableWalls = 0;
   bridge: Item = null;
+  trigger: Trigger = null;
 }
 
 export namespace FloorData {
@@ -633,33 +541,6 @@ export class Sector {
     this.floor = stream.readInt8() * 256;
     this.roomAboveIdx = stream.readUint8();
     this.ceiling = stream.readInt8() * 256;
-  }
-
-  getTriggers(predicate: (f: FloorFunc) => boolean) {
-    let result = [];
-    for (let func of this.floorData.funcs) {
-      if (func.type != FloorFunc.Type.TRIGGER) {
-        continue;
-      }
-      if (predicate(func)) {
-        result.push(func);
-      }
-    }
-    return result;
-  }
-
-  getTrigger(triggerType: TriggerType) {
-    let result: FloorFunc = null;
-    for (let func of this.floorData.funcs) {
-      if (func.type == FloorFunc.Type.TRIGGER &&
-          func.sub == triggerType) {
-        if (result != null) {
-          throw new Error(`found multiple triggers with the same type`);
-        }
-        result = func;
-      }
-    }
-    return result;
   }
 
   /** Returns the sector that contains the real floor (not a portal). */
@@ -817,9 +698,9 @@ export class Sector {
 
       // Figure out the bridge slope based on its type and rotation.
       let slope = 0;
-      if (bridge.type == ItemType.BRIDGE_SLOPE_1) {
+      if (bridge.type == EntityType.BRIDGE_SLOPE_1) {
         slope = 256;
-      } else if (bridge.type == ItemType.BRIDGE_SLOPE_2) {
+      } else if (bridge.type == EntityType.BRIDGE_SLOPE_2) {
         slope = 512;
       }
 
@@ -1367,7 +1248,7 @@ export interface TextureData {
   data: Uint8Array;
 }
 
-export class FlipMap {
+export class FlipMapEntry {
   once = false;
   activeMask = 0;
 }
@@ -1412,13 +1293,13 @@ export class Scene {
   lightTex: TextureData;
   lara: Lara;
   secretsFound: boolean[] = [];
-  flipMap: FlipMap[] = [];
+  flipMap: FlipMapEntry[] = [];
   flipped = false;
 
   constructor(public name: string, buf: ArrayBuffer, ctx: Context) {
     let stream = new Stream(buf);
     this.version = stream.readUint32();
-    if (this.version != V1) {
+    if (this.version != TR1) {
       throw new Error('Version 0x' + this.version.toString(16) + ' != 0x20');
     }
 
@@ -1535,35 +1416,11 @@ export class Scene {
       seq.init(ctx, this);
     }
 
-    /*
-    for (let roomIdx = 0; roomIdx < this.rooms.length; ++roomIdx) {
-      let room = this.rooms[roomIdx];
-      let basei = room.x / 1024;
-      let basej = room.z / 1024;
-      for (let j = basej; j < basej + room.sectorTableHeight; ++j) {
-        for (let i = basei; i < basei + room.sectorTableWidth; ++i) {
-          let sector = room.getSectorByGrid(i, j);
-          if (sector.roomAbove != null &&
-              sector.roomAbove.getSectorByGrid(i, j).portal != null) {
-            throw new Error(':(');
-          }
-          if (sector.roomBelow != null &&
-              sector.roomBelow.getSectorByGrid(i, j).portal != null) {
-            throw new Error(':(');
-          }
-        }
-      }
-    }
-    */
-
-    for (let room of this.rooms) {
-      this.flipMap.push(new FlipMap());
-    }
-
     this.createControllers();
   }
 
   flipRooms() {
+    // TODO(tom): how is the crocodile in St Francis Folly handled?
     for (let a of this.rooms) {
       if (a.alternateRoom == -1) { continue; }
       let b = this.rooms[a.alternateRoom];
@@ -1604,93 +1461,108 @@ export class Scene {
    * Run all the actions in the floor func.
    * @param func
    * @param begin the index of actions to start from. For most triggers, `begin`
-   *        should be 1 (because index 0 is the tiggerMask, once & other flags).
-   *        For pickup or switch triggers, `begin` should be 2 because index 1
-   *        is the entity being interacted with.
-   * @param triggerState the state to set entities: 0 or 1. For example can
-   *        correspond to whether a switch is up or down.
+   *        should be 1 (because index 0 is the triggerMask, oneShot & other
+   *        flags). For pickup or switch triggers, `begin` should be 2 because
+   *        index 1 is the entity being interacted with.
    */
-  runActions(func: FloorFunc, begin: number, triggerState: number) {
-    let triggerMask = func.actions[0] >> 9;
-    let once = ((func.actions[0] >> 8) & 1) != 0;
+  runActions(trigger: Trigger, begin: number) {
     let needFlip = false;
 
-    for (let i = begin; i < func.actions.length; ++i) {
-      let action = (func.actions[i] >> 10) & 0xf;
-      let parameter = func.actions[i] & 0x3ff;
+    for (let i = begin; i < trigger.actions.length; ++i) {
+      let action = (trigger.actions[i] >> 10) & 0xf;
+      let parameter = trigger.actions[i] & 0x3ff;
       switch (action) {
-        case FloorFunc.Op.ITEM:
-          if (parameter < this.controllers.length) {
-            this.controllers[parameter].changeState(triggerState);
-          } else {
+        case Trigger.Action.ACTIVATE:
+          if (parameter >= this.controllers.length) {
             console.log(`Activate item index ${parameter} out of range`);
+            continue;
           }
+
+          let item = this.items[parameter];
+          // TODO(tom): oneShot handling
+          // TODO(tom): timer handling
+
+          if (trigger.type == Trigger.Type.SWITCH) {
+            item.activeMask ^= trigger.mask;
+          } else if (trigger.type == Trigger.Type.TRIGGER_ON ||
+                     trigger.type == Trigger.Type.PAD_ON) {
+            item.activeMask |= trigger.mask;
+          } else if (trigger.type == Trigger.Type.TRIGGER_OFF ||
+                     trigger.type == Trigger.Type.PAD_OFF) {
+            item.activeMask &= ~trigger.mask;
+          }
+          item.controller.activate();
           break;
 
-        case FloorFunc.Op.CAMERA_SWITCH:
-          let parameter2 = func.actions[i++];
-          break;
-
-        case FloorFunc.Op.UNDERWATER_CURRENT:
+        case Trigger.Action.CAMERA_SWITCH:
+          let parameter2 = trigger.actions[i++];
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.FLIP_MAP:
+        case Trigger.Action.UNDERWATER_CURRENT:
+          // TODO(tom)
+          break;
+
+        case Trigger.Action.FLIP_MAP:
+          // Lazily create the flip map entries.
           let flip = this.flipMap[parameter];
+          if (flip == null) {
+            flip = new FlipMapEntry();
+            this.flipMap[parameter] = flip;
+          }
+
           if (flip.once) { break; }
-          if (func.type == FloorFunc.Type.TRIGGER &&
-              func.sub == TriggerType.SWITCH) {
-            flip.activeMask ^= triggerMask;
-            if (flip.activeMask == 0x1f) {
-              flip.once = flip.once || once;
+          if (trigger.type == Trigger.Type.SWITCH) {
+            flip.activeMask ^= trigger.mask;
+            if (flip.activeMask == ACTIVE) {
+              flip.once = flip.once || trigger.oneShot;
             }
-            if ((flip.activeMask == 0x1f) != this.flipped) {
+            if ((flip.activeMask == ACTIVE) != this.flipped) {
               needFlip = true;
             }
           }
           break;
 
-        case FloorFunc.Op.FLIP_ON:
+        case Trigger.Action.FLIP_ON:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.FLIP_OFF:
+        case Trigger.Action.FLIP_OFF:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.LOOK_AT:
+        case Trigger.Action.LOOK_AT:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.END_LEVEL:
+        case Trigger.Action.END_LEVEL:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.FLIP_EFFECT:
+        case Trigger.Action.FLIP_EFFECT:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.PLAY_MUSIC:
-          let mask = (func.actions[0] >> 8) & 0x3f;
-          audio.playTrack(parameter, mask);
+        case Trigger.Action.PLAY_MUSIC:
+          audio.playTrack(parameter, trigger.mask);
           break;
 
-        case FloorFunc.Op.SECRET:
+        case Trigger.Action.SECRET:
           if (!this.secretsFound[parameter]) {
             this.secretsFound[parameter] = true;
             audio.playSecret();
           }
           break;
 
-        case FloorFunc.Op.CLEAR_BODIES:
+        case Trigger.Action.CLEAR_BODIES:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.FLY_BY:
+        case Trigger.Action.FLY_BY:
           // TODO(tom)
           break;
 
-        case FloorFunc.Op.CUTSCENE:
+        case Trigger.Action.CUTSCENE:
           // TODO(tom)
           break;
       }
@@ -1741,6 +1613,8 @@ export class Scene {
     return textures;
   }
 
+  // TODO(tom): don't convert the palette: the top bit of the palette entry
+  // determines if a polygon is double-sided or not and we need to preserve that.
   private convertPalette_() {
     let palette = new Uint8Array(4 * 256);
     // Leave the first palette entry as transparent black.
@@ -1832,64 +1706,75 @@ export class Scene {
       remap[idx] = parsedFloorData.length;
 
       let parsed = new FloorData();
-      let data = 0;
+      let data, funcType, subFunc, end: number;
       do {
         data = this.rawFloorData[idx++];
-        let type = data & 0xff;
-        let sub = (data >> 8) & 0x7f;
+        funcType = data & 0x1f;
+        subFunc = (data >> 8) & 0x7f;
+        end = (data >> 15) & 0x1;
 
-        if (type == FloorFunc.Type.CEILING_SLOPE) {
-          decodeSlope(this.rawFloorData[idx++], parsed.ceilingSlope);
-        } else if (type == FloorFunc.Type.FLOOR_SLOPE) {
-          decodeSlope(this.rawFloorData[idx++], parsed.floorSlope);
-        } else if (type == FloorFunc.Type.PORTAL_SECTOR) {
-          let roomIdx = this.rawFloorData[idx++];
-          if (roomIdx != -1) {
-            parsed.portal = this.rooms[roomIdx];
-          }
-        } else if (type != FloorFunc.Type.NONE) {
-          let func = new FloorFunc(type, sub);
-          switch (type) {
-            case FloorFunc.Type.KILL:
-            case FloorFunc.Type.CLIMBABLE_WALL:
-              // No actions.
-              break;
+        switch (funcType) {
+          case FloorFuncType.NONE:
+            break;
 
-            case FloorFunc.Type.TRIGGER:
-              // TRIGGER has a sequence of actions.
-              // The last one in the sequence has its top bit set.
-              do {
-                if (idx >= this.rawFloorData.length) {
-                  throw new Error(
-                      'Ran off the end of the rawFloorData array: ' + idx +
-                      ' >= ' + this.rawFloorData.length);
-                }
-                // Strip the 'more data' bit from the opcode.
-                func.actions.push(this.rawFloorData[idx] & 0x7fff);
-              } while ((this.rawFloorData[idx++] & 0x8000) == 0);
-              break;
+          case FloorFuncType.PORTAL_SECTOR:
+            let roomIdx = this.rawFloorData[idx++];
+            if (roomIdx != -1) {
+              parsed.portal = this.rooms[roomIdx];
+            }
+            break;
 
-            default:
-              throw new Error('Unrecognized floor type: ' + type);
-          }
+          case FloorFuncType.FLOOR_SLOPE:
+            decodeSlope(this.rawFloorData[idx++], parsed.floorSlope);
+            break;
 
-          // Check if the sector has a bridge piece.
-          if (type == FloorFunc.Type.TRIGGER &&
-              sub == TriggerType.TRIGGER_ON) {
-            for (let i = 1; i < func.actions.length; ++i) {
-              let opcode = func.actions[i];
-              let op = (opcode >> 10) & 0xf;
-              let operand = opcode & 0x3ff;
-              if (op == FloorFunc.Op.ITEM &&
-                  operand < this.items.length &&
-                  this.items[operand].isBridge()) {
-                parsed.bridge = this.items[operand];
+          case FloorFuncType.CEILING_SLOPE:
+            decodeSlope(this.rawFloorData[idx++], parsed.ceilingSlope);
+            break;
+
+          case FloorFuncType.TRIGGER:
+            parsed.trigger = new Trigger(subFunc, this.rawFloorData[idx++]);
+
+            // TRIGGER has a sequence of actions.
+            // The last one in the sequence has its top bit set.
+            do {
+              if (idx >= this.rawFloorData.length) {
+                throw new Error(
+                    'Ran off the end of the rawFloorData array: ' + idx +
+                    ' >= ' + this.rawFloorData.length);
               }
+              // Strip the 'more data' bit from the action bits..
+              parsed.trigger.actions.push(this.rawFloorData[idx] & 0x7fff);
+            } while ((this.rawFloorData[idx++] & 0x8000) == 0);
+            break;
+
+          case FloorFuncType.KILL:
+            parsed.kill = true;
+            break;
+
+          case FloorFuncType.CLIMBABLE_WALL:
+            parsed.climbableWalls = subFunc;
+            break
+
+          default:
+            throw new Error(`Unrecognized floor func type: ${funcType}`);
+        }
+
+        // Check if the sector has a bridge piece.
+        if (parsed.trigger != null &&
+            parsed.trigger.type == Trigger.Type.TRIGGER_ON) {
+          for (let i = 0; i < parsed.trigger.actions.length; ++i) {
+            let bits = parsed.trigger.actions[0];
+            let action = (bits >> 10) & 0xf;
+            let parameter = bits & 0x3ff;
+            if (action == Trigger.Action.ACTIVATE &&
+                parameter < this.items.length &&
+                this.items[parameter].isBridge()) {
+              parsed.bridge = this.items[parameter];
             }
           }
-          parsed.funcs.push(func);
         }
-      } while ((data & 0x8000) == 0);
+      } while (!end);
       parsedFloorData.push(parsed);
     }
 
@@ -2118,37 +2003,31 @@ export class Scene {
   private createControllers() {
     this.controllers = [];
     for (let item of this.items) {
-      if (item.animState == null) {
-        this.controllers.push(null);
-        continue;
+      if (item.animState != null) {
+        item.animState.anim.getFrame(
+            item.animState.frameIdx, item.animState.frameOfs, item.animState.frame);
+        item.animState.setMeshTransforms(
+            item.moveable.meshCount, item.moveable.meshTree, this.meshTrees);
       }
 
-      item.animState.anim.getFrame(
-          item.animState.frameIdx, item.animState.frameOfs, item.animState.frame);
-      item.animState.setMeshTransforms(
-          item.moveable.meshCount, item.moveable.meshTree, this.meshTrees);
-      switch (item.type) {
-        case ItemType.LARA:
-          this.lara = new Lara(item, this);
-          this.controllers.push(this.lara);
-          break;
-  
-        case ItemType.BLOCK_1:
-        case ItemType.BLOCK_2:
-          this.controllers.push(new Block(item, this));
-          break;
+      let controller: Controller;
+      if (item.isLara()) {
+        this.lara = new Lara(item, this);
+        controller = this.lara;
+      } else if (item.isBlock()) {
+        controller = new Block(item, this);
+      } else if (item.isDoor()) {
+        controller = new Door(item, this);
+      } else if (item.isSwitch()) {
+        controller = new Switch(item, this);
+      } else {
+        controller = new Controller(item, this);
+      }
+      this.controllers.push(controller);
 
-        case ItemType.SWITCH:
-        case ItemType.UNDERWATER_SWITCH:
-          this.controllers.push(new Switch(item, this));
-          break;
-
-        default:
-          // TODO(tom): do we really need to create a controller for every
-          // single item? That's a lot of items with update methods that don't
-          // do anything.
-          this.controllers.push(new Controller(item, this));
-          break;
+      if (item.activeMask == ACTIVE) {
+        item.controller.activate();
+        item.reverse = true;
       }
     }
 

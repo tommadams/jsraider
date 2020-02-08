@@ -203,7 +203,7 @@ export class Culler {
 
   private sortVisibleItems() {
     for (let item of this.items) {
-      if (!item.renderable) {
+      if (!item.visible) {
         continue;
       }
       let visibleRoomIdx = this.roomVisibility[item.room.id];

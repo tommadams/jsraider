@@ -4,11 +4,12 @@ import * as vec3 from 'toybox/math/vec3';
 import * as audio from 'audio';
 
 import {AnimationId} from 'animation';
-import {BlockState} from 'block';
+import {Block} from 'controllers/block';
 import {Intersection, moveCharacter, resolveRoomByGrid, resolveRoomByPosition} from 'collision';
 import {Controller} from 'controllers/controller';
-import {Switch, isSwitch} from 'controllers/switch';
-import {Item, ItemType, FloorFunc, Room, Scene, Sector, TriggerType} from 'scene';
+import {Switch} from 'controllers/switch';
+import {EntityType} from 'entity';
+import {Item, Room, Scene, Sector, Trigger} from 'scene';
 import {Input} from 'input';
 import {SlidingConstraints} from 'sliding_constraints';
 import {State} from 'state';
@@ -160,23 +161,22 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[9];
     } else if (scene.name == 'LEVEL01.PHD') {
       // caves - bridge
-      // item.position[0] = 25122;
-      // item.position[1] = 4352;
-      // item.position[2] = 55814;
+      // vec3.setFromValues(item.position, 25122, 4352, 55814);
       // item.rotation[1] = Math.PI;
       // item.room = this.scene.rooms[13];
 
       // caves - switch
-      // item.position[0] = 50831;
-      // item.position[1] = 7680;
-      // item.position[2] = 57704;
+      // vec3.setFromValues(item.position, 50831, 7680, 57704);
       // item.rotation[1] = 1.5 * Math.PI;
       // item.room = this.scene.rooms[9];
 
+      // caves - timed switch
+      // vec3.setFromValues(item.position, 24447.9, 6912.0, 83495.9);
+      // item.rotation[1] = 0.5 * Math.PI;
+      // item.room = this.scene.rooms[26];
+
       // caves - secret
-      // item.position[0] = 66142;
-      // item.position[1] = -2910;
-      // item.position[2] = 52184;
+      // vec3.setFromValues(item.position, 66142, -2910, 52184);
       // item.rotation[1] = -0.4 * Math.PI;
       // item.room = this.scene.rooms[28];
     } else if (scene.name == 'LEVEL02.PHD') {
@@ -228,6 +228,10 @@ export class Lara extends Controller {
       // item.position[2] = 48256;
       // item.rotation[1] = 0.5 * Math.PI;
       // item.room = this.scene.rooms[16];
+    } else if (scene.name == 'LEVEL05.PHD') {
+      vec3.setFromValues(this.item.position, 59031, -4608, 64042);
+      item.rotation[1] = 0.37;
+      item.room = this.scene.rooms[41];
     } else if (scene.name == 'LEVEL07A.PHD') {
       // the cistern - entrance
       // this.item.position[0] = 45549; 
@@ -284,8 +288,8 @@ export class Lara extends Controller {
     }
 
     this.sector = this.item.room.getSectorByPosition(this.item.position);
-    // this.updateTriggers();
-    // this.prevSector = this.sector;
+
+    this.item.active = true;
   }
 
   getBoneTransform(bone: LaraBone) {
@@ -433,8 +437,14 @@ export class Lara extends Controller {
     // one tile, climb up and try to vault up to the ledge with the large
     // medipack.
     let floor = sector.getFloorAt(position);
+    let ceiling = sector.getCeilingAt(position);
     let dy = this.item.position[1] - floor;
     if (dy > VAULT_HIGH_HEIGHT) {
+      return;
+    }
+
+    // Don't let Lara grab blocks that tightly fit into a hole.
+    if (floor <= ceiling) {
       return;
     }
 
@@ -455,10 +465,8 @@ export class Lara extends Controller {
     // from Lara's current sector and the next sector to avoid her bumping her
     // head as she climbs up.
     if (dy <= VAULT_MEDIUM_HEIGHT) {
-      let ceiling = Math.max(
-          this.sector.getCeilingAt(position),
-          sector.getCeilingAt(position));
-      if (floor - ceiling < this.height) {
+      let maxCeiling = Math.max(this.sector.getCeilingAt(position), ceiling);
+      if (floor - maxCeiling < this.height) {
         return;
       }
     }
@@ -497,6 +505,7 @@ export class Lara extends Controller {
   
     this.locomotionType = this.getLocomotionType();
     this.updateState(dt);
+    this.updateTriggers();
     this.updateVelocity(dt);
     this.updatePosition(dt);
     this.updateSector();
@@ -593,43 +602,17 @@ export class Lara extends Controller {
     let room = resolveRoomByGrid(
         this.item.room, this.i, this.j, this.item.position[1]);
     let sector = room.getSectorByGrid(this.i, this.j);
-    if (room != this.item.room) {
-      debugger
-    }
-    if (sector != this.sector) {
-      debugger
-    }
 
-    // First check if Lara can interact with a switch (since we can check
-    // that directly).
-    let trigger = sector.getTrigger(TriggerType.SWITCH);
-    if (trigger != null) {
-      if (this.nearSectorEdge(this.radius + 16)) {
-        if (this.state == State.WALK || this.state == State.RUN) {
-          this.hardTransitionToIdle();
-        }
-        let controller = this.scene.items[trigger.actions[1] & 0x3ff].controller;
-        if (isSwitch(controller)) {
-          let switchState = 1 - controller.item.animState.anim.state;
-          let laraState = switchState ? State.SWITCH_UP : State.SWITCH_DOWN;
-          if (this.item.animState.tryChangeState(laraState)) {
-            controller.changeState(switchState);
-            this.alignToAxis();
-            return laraState;
-          }
-        }
-      }
-    }
-  
     for (let item of this.scene.items) {
-      if (!item.active || item == this.item) {
+      if (item == this.item) {
         continue;
       }
  
       if (item.isPickup()) {
-        if (item.room == room &&
+        if (item.visible &&
+            item.room == room &&
             this.item.animState.canChangeState(State.PICK_UP) &&
-          vec3.distance(item.position, this.item.position) < 320) {
+            vec3.distance(item.position, this.item.position) < 320) {
           this.interactingItem = item;
           return State.PICK_UP;
         }
@@ -647,22 +630,23 @@ export class Lara extends Controller {
               let di, dj: number;
               let targetRoom: Room;
               let laraState: State;
-              let blockState: BlockState;
+              let blockState: Block.State;
               if (this.input.forward) {
                 // Trying to push the block forwards: check whether there's
                 // space in front of the block (start from the block's room).
                 [di, dj, targetRoom] = [2 * this.di, 2 * this.dj, item.room];
-                [laraState, blockState] = [State.PUSH_BLOCK, BlockState.PUSH];
+                [laraState, blockState] = [State.PUSH_BLOCK, Block.State.PUSH];
               } else {
                 // Trying to push the block backwards: check whether there's
                 // space in behind Lara  (start from Lara's room).
                 [di, dj, targetRoom] = [-this.di, -this.dj, room];
-                [laraState, blockState] = [State.PULL_BLOCK, BlockState.PULL];
+                [laraState, blockState] = [State.PULL_BLOCK, Block.State.PULL];
               }
               if (this.item.animState.canChangeState(laraState) &&
                   this.canPushBlockTo(targetRoom, this.i + di, this.j + dj, item.position[1])) {
                 item.rotation[1] = this.item.rotation[1];
                 item.controller.changeState(blockState);
+                item.controller.activate();
                 return laraState;
               }
             }
@@ -689,6 +673,7 @@ export class Lara extends Controller {
    *     sector at (i, j).
    */
   private canPushBlockTo(room: Room, i: number, j: number, y: number) {
+    // TODO(tom): check for trap doors
     room = resolveRoomByGrid(room, i, j, y);
     if (room == null) { return false; }
     let sector = room.getSectorByGrid(i, j);
@@ -887,11 +872,12 @@ export class Lara extends Controller {
       let grabRoom = resolveRoomByPosition(currRoom, v);
       let grabSector = grabRoom.getSectorByPosition(v);
       let grabFloor = grabSector.getFloorAt(v);
+      let grabCeiling = grabSector.getCeilingAt(v);
   
       // If Lara passed by the grab point this frame, transition to the HANG state.
       let minY = Math.min(currPos[1], prevPos[1]);
       let maxY = Math.max(currPos[1], prevPos[1]);
-      if (minY <= grabFloor && maxY >= grabFloor) {
+      if (grabFloor > grabCeiling && minY <= grabFloor && maxY >= grabFloor) {
         // TODO(tom): Probably don't want to simply use HANG and the +15 frame
         // offset here. Figure out how these three animations should be used:
         //   29 "jump_up_catch_edge"
@@ -1320,18 +1306,8 @@ export class Lara extends Controller {
       let frame = this.item.room.isUnderwater() ? PICK_UP_FRAME_UNDERWATER :
                                                   PICK_UP_FRAME_NORMAL;
       if (animState.frameIdx - animState.anim.firstFrame == frame) {
-        this.interactingItem.active = false;
-        this.interactingItem.renderable = false;
-        let func = this.sector.getTrigger(TriggerType.PICK_UP);
-        if (func != null) {
-          let opcode = func.actions[1];
-          let op = (opcode >> 10) & 0xf;
-          let parameter = opcode & 0x3ff;
-          if (op != FloorFunc.Op.ITEM) { throw new Error('expected ITEM op'); }
-          if (this.scene.items[parameter] == this.interactingItem) {
-            this.scene.runActions(func, 2, 0);
-          }
-        }
+        this.interactingItem.controller.deactivate();
+        this.interactingItem.visible = false;
       }
     }
   }
@@ -1609,132 +1585,191 @@ export class Lara extends Controller {
   
     if (this.sector != this.prevSector) {
       this.logFloorData();
-      this.updateTriggers();
       this.prevSector = this.sector;
     }
   }
 
   private logFloorData() {
     let sector = this.sector.getResolvedFloorSector();
+    let floorData = sector.floorData;
 
-    if (sector.floorData.funcs.length == 0) {
-      return;
-    }
-  
     let lines = [];
-    for (let i = 0; i < sector.floorData.funcs.length; ++i) {
-      let func = sector.floorData.funcs[i];
-      let activationMask = func.actions[0] >> 9;
-      let once = (func.actions[0] >> 8) & 1;
-  
-      let line = `${i} func:${FloorFunc.Type[func.type]}`;
-      if (func.type == FloorFunc.Type.TRIGGER) {
-        line +=
-            ` mask:${activationMask} once: ${once}` +
-            ` trigger:${TriggerType[func.sub]} (${func.sub})`;
-      };
-      lines.push(line);
-  
-      for (let j = 1; j < func.actions.length; ++j) {
-        let opcode = func.actions[j];
-        let op = (opcode >> 10) & 0xf;
-        let parameter = opcode & 0x3ff;
-  
-        switch (op) {
-          case FloorFunc.Op.ITEM:
-            line = `op:ITEM idx: ${parameter}`;
+    if (floorData.kill) {
+      lines.push('KILL');
+    }
+    if (floorData.climbableWalls) {
+      lines.push(`CLIMB:${floorData.climbableWalls}`);
+    }
+
+    let trigger = floorData.trigger;
+    if (trigger != null) {
+      lines.push(`TRIGGER type:${Trigger.Type[trigger.type]} ` +
+                 `timer:${trigger.timer} ` +
+                 `mask:0x${trigger.mask.toString(16)} ` +
+                 `oneShot:${trigger.oneShot}`);
+
+      for (let i = 0; i < trigger.actions.length; ++i) {
+        let bits = trigger.actions[i];
+        let action = (bits >> 10) & 0xf;
+        let parameter = bits & 0x3ff;
+        let line: string;
+
+        switch (action) {
+          case Trigger.Action.ACTIVATE:
+            line = `action:ACTIVATE idx:${parameter}`;
             if (parameter < this.scene.items.length) {
               let itemType = this.scene.items[parameter].type;
-              line += ` type:${ItemType[itemType]} (${itemType})`;
+              let typeName = EntityType[itemType];
+              if (typeName == null) { typeName = `UNDEFINED<${itemType}>`; }
+              line += ` type:${typeName}`;
             } else {
               line += ` out of range (${this.scene.items.length})`;
             }
-            break;
-  
-          case FloorFunc.Op.PLAY_MUSIC:
-            line = `op:PLAY_MUSIC ${parameter}`;
-            break;
-  
-          case FloorFunc.Op.SECRET:
-            line = `op:SECRET ${parameter}`;
+            line += ` mask:0x${this.scene.items[parameter].activeMask.toString(16)}`;
             break;
 
-          case FloorFunc.Op.CAMERA_SWITCH:
-            let parameter2 = func.actions[j++];
+          case Trigger.Action.PLAY_MUSIC:
+            line = `action:PLAY_MUSIC track:${parameter}`;
+            break;
+
+          case Trigger.Action.SECRET:
+            line = `action:SECRET idx:${parameter}`;
+            break;
+
+          case Trigger.Action.CAMERA_SWITCH:
+            let parameter2 = trigger.actions[i++];
             let time = parameter2 & 0xff;
             let once = ((parameter2 >> 8) & 1) == 0;
             let moveTimer = (parameter2 >> 9) & 0x1f;
-            line = `op:CAMERA idx:${parameter} time:${time} once:${once} move:${moveTimer}`;
+            line = `action:CAMERA idx:${parameter} time:${time} once:${once} move:${moveTimer}`;
             break;
-  
-          case FloorFunc.Op.FLIP_EFFECT:
-          case FloorFunc.Op.UNDERWATER_CURRENT:
-          case FloorFunc.Op.FLIP_MAP:
-          case FloorFunc.Op.FLIP_ON:
-          case FloorFunc.Op.FLIP_OFF:
-          case FloorFunc.Op.LOOK_AT:
-          case FloorFunc.Op.END_LEVEL:
-            line = `op:${FloorFunc.Op[op]} 0x${parameter.toString(16)}`;
+
+          case Trigger.Action.FLIP_EFFECT:
+          case Trigger.Action.UNDERWATER_CURRENT:
+          case Trigger.Action.FLIP_MAP:
+          case Trigger.Action.FLIP_ON:
+          case Trigger.Action.FLIP_OFF:
+          case Trigger.Action.LOOK_AT:
+          case Trigger.Action.END_LEVEL:
+            line = `action:${Trigger.Action[action]} 0x${parameter.toString(16)}`;
             break;
-  
+
           default:
-            line = `op:UNKNOWN<${op}> 0x${parameter.toString(16)}`;
+            line = `action:UNKNOWN<${action}> 0x${parameter.toString(16)}`;
             break;
         }
-  
+
         lines.push('    ' + line);
       }
     }
   
-    console.log(lines.join('\n'));
+    if (lines.length != 0) {
+      console.log(lines.join('\n'));
+    }
   }
 
   private updateTriggers() {
     let sector = this.sector.getResolvedFloorSector();
-    let funcs = sector.getTriggers((func: FloorFunc) => {
-      return (func.sub == TriggerType.TRIGGER_ON ||
-              func.sub == TriggerType.TRIGGER_OFF ||
-              func.sub == TriggerType.PAD_ON ||
-              func.sub == TriggerType.PAD_OFF);
-    });
-  
-    // TODO(tom): Figure out modifiers (Lara in the air, etc).
-    for (let func of funcs) {
-      let triggerState;
+    let trigger = sector.floorData.trigger;
+    if (trigger == null) {
+      return;
+    }
 
-      // Skip pad triggers if Lara isn't on the ground.
-      if (func.sub == TriggerType.PAD_ON ||
-         func.sub == TriggerType.PAD_ON) {
+    let actionStart = 0;
+    let runActions = false;
+
+    switch (trigger.type) {
+      case Trigger.Type.TRIGGER_ON:
+        runActions = true;
+        break;
+
+      case Trigger.Type.PAD_ON:
+      case Trigger.Type.PAD_OFF:
+        // Skip pad triggers if Lara isn't on the ground.
         if (this.locomotionType != LocomotionType.GROUND) {
-          continue;
+          return;
         }
-      }
+        runActions = true;
+        break;
 
-      if (func.sub == TriggerType.TRIGGER_ON ||
-          func.sub == TriggerType.PAD_ON) {
-        triggerState = 1;
-      } else {
-        triggerState = 0;
-      }
-      this.scene.runActions(func, 1, triggerState);
+      case Trigger.Type.SWITCH:
+        // TODO(tom): write a proper interaction test function
+        if (!this.input.action ||
+            !this.nearSectorEdge(this.radius + 16)) {
+          return;
+        }
+
+        // Stop immediately if Lara runs into a switch with the action button
+        // pressed. This makes the switch behaviour match the vaulting
+        // behaviour, but differs from the original game (in which Lara would
+        // first play a stopping animation).
+        if (this.state == State.WALK || this.state == State.RUN) {
+          this.hardTransitionToIdle();
+        }
+
+        actionStart = 1;
+        let switchItem = this.scene.items[trigger.actions[0] & 0x3ff];
+        let laraState, switchState: number;
+        if (switchItem.animState.anim.state == Switch.State.DOWN) {
+          switchState = Switch.State.UP;
+          laraState = State.SWITCH_UP;
+        } else {
+          switchState = Switch.State.DOWN;
+          laraState = State.SWITCH_DOWN;
+        }
+        if (switchItem.animState.canChangeState(switchState) &&
+            this.item.animState.tryChangeState(laraState)) {
+          this.alignToAxis();
+          switchItem.controller.activate();
+        }
+        // We don't run actions for the switch here. Instead, actions are run
+        // when the switch deactivates at the end of its animation.
+        break;
+
+      case Trigger.Type.KEY:
+        runActions = true;
+        break;
+
+      case Trigger.Type.PICK_UP:
+        if (this.scene.items[trigger.actions[0] & 0x3ff] != this.interactingItem ||
+            this.interactingItem.visible) {
+          return;
+        }
+        actionStart = 1;
+        runActions = true;
+        break;
+
+      case Trigger.Type.HEAVY_TRIGGER:
+        return;
+
+      case Trigger.Type.COMBAT:
+      case Trigger.Type.DUMMY:
+      case Trigger.Type.TRIGGER_OFF:
+      case Trigger.Type.HEAVY_SWITCH:
+      case Trigger.Type.HEAVY_TRIGGER_OFF:
+      case Trigger.Type.MONKEY:
+      case Trigger.Type.SKELETON:
+      case Trigger.Type.TIGHTROPE:
+      case Trigger.Type.CRAWL:
+      case Trigger.Type.CLIMB:
+        // TODO(tom)
+        console.log(`IGNORING TRIGGER ${Trigger.Type[trigger.type]}`);
+        return;
+    }
+
+    if (runActions) {
+      this.scene.runActions(trigger, actionStart);
     }
   }
 
   toString() {
-    let state = State[this.state];
     let locomotion = LocomotionType[this.locomotionType];
-    let speed = this.item.animState.anim.speed;
-    let accel = this.item.animState.anim.accel;
-    let pos = this.item.position;
     let vel = this.velocity;
-    let rot = this.item.rotation;
     let parts = [
-        `lara room: ${this.item.room.id}`,
-        `i: ${this.i} j: ${this.j} di: ${this.di} dj: ${this.dj}`,
-        `locomotion: ${locomotion} state: ${state}`,
-        `speed: ${speed.toFixed(1)} accel: ${accel.toFixed(1)}`,
-        `position: ${pos[0].toFixed(1)} ${pos[1].toFixed(1)} ${pos[2].toFixed(1)}`,
-        `rotation: ${rot[0].toFixed(2)} ${rot[1].toFixed(2)} ${rot[2].toFixed(2)}`,
+        super.toString(),
+        '',
+        `di:${this.di} dj: ${this.dj}`,
+        `locomotion:${locomotion}`,
         `velocity: ${vel[0].toFixed(1)} ${vel[1].toFixed(1)} ${vel[2].toFixed(1)}`,
     ];
     return parts.join('\n');
@@ -1742,5 +1777,5 @@ export class Lara extends Controller {
 }
 
 export function isLara(controller: Controller): controller is Lara {
-  return controller.item.type == ItemType.LARA;
+  return controller.item.type == EntityType.LARA;
 }
