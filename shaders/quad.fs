@@ -1,12 +1,15 @@
 #include "shaders/quad_st.inc"
 #include "shaders/sample_aann.inc"
 #include "shaders/fog.inc"
+#include "shaders/tonemap.inc"
 
 uniform sampler2D tex;
 uniform vec2 texSize;
 uniform sampler2D lightTex;
 uniform vec2 lightTexSize;
 uniform float gamma;
+uniform float brightness;
+uniform float contrast;
 
 in vec4 v_color;
 in vec2 v_lightUv;
@@ -32,8 +35,8 @@ void main(void) {
   }
 
   o_color.xyz *= 2.0 * texture(lightTex, lightMapUv).xyz;
-  o_color.xyz = applyFog(o_color.xyz);
 
-  o_color.xyz = pow(o_color.xyz, vec3(gamma));
+  o_color.xyz = applyFog(o_color.xyz);
+  o_color.xyz = tonemap(o_color.xyz);
 }
 

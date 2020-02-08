@@ -48,7 +48,6 @@ export class Renderer {
 
   private fogStart_ = 8192;
   private fogDensity_ = 0.00015;
-  private gamma_ = 0.85;
 
   private bakedLightTex: Texture2D;
   private lightFb_: Framebuffer;
@@ -321,13 +320,12 @@ export class Renderer {
     // Draw quad batches.
     ctx.useProgram(this.shaders.quad);
     ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
-    ctx.setUniform('gamma', this.gamma_);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.bindTexture('lightTex', this.lightFb_.color[0]);
     ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
     ctx.setUniform('lightTexSize', this.lightFb_.width, this.lightFb_.height);
   
-    this.disableLighting_();
+    this.disableLighting();
   
     if (stencilStaticMeshes) {
       ctx.enable(GL.STENCIL_TEST);
@@ -351,7 +349,7 @@ export class Renderer {
     for (let item of moveables) {
       let animState = item.animState;
   
-      this.setLighting_(item);
+      this.setLighting(item);
       let moveable = item.moveable;
       for (let meshIdx of moveable.renderableMeshIndices) {
         let mesh = moveable.meshes[meshIdx];
@@ -365,12 +363,11 @@ export class Renderer {
     // Draw tri batches.
     ctx.useProgram(this.shaders.tri);
     ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
-    ctx.setUniform('gamma', this.gamma_);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.bindTexture('lightTex', this.lightFb_.color[0]);
     ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
   
-    this.disableLighting_();
+    this.disableLighting();
 
     if (stencilStaticMeshes) {
       ctx.enable(GL.STENCIL_TEST);
@@ -393,7 +390,7 @@ export class Renderer {
     for (let item of moveables) {
       let animState = item.animState;
   
-      this.setLighting_(item);
+      this.setLighting(item);
       let moveable = item.moveable;
       for (let meshIdx of moveable.renderableMeshIndices) {
         let mesh = moveable.meshes[meshIdx];
@@ -407,7 +404,6 @@ export class Renderer {
     // Draw static sprite batch.
     ctx.useProgram(this.shaders.sprite);
     ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
-    ctx.setUniform('gamma', this.gamma_);
     ctx.setUniform('eyePos', this.eyePos_);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
@@ -432,14 +428,14 @@ export class Renderer {
     }
   }
 
-  private disableLighting_() {
+  private disableLighting() {
     let ctx = this.ctx;
     ctx.setUniform('ambient', 1.0);
     ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
     ctx.setUniform('lights', this.noLightsConstants_);
   }
   
-  private setLighting_(item: Item) {
+  private setLighting(item: Item) {
     let ctx = this.ctx;
     let room = item.room;
   

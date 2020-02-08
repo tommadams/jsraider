@@ -1,9 +1,12 @@
 #include "shaders/sample_aann.inc"
 #include "shaders/fog.inc"
+#include "shaders/tonemap.inc"
 
 uniform sampler2D tex;
 uniform vec2 texSize;
 uniform float gamma;
+uniform float brightness;
+uniform float contrast;
 
 in vec2 v_uv;
 in vec3 v_color;
@@ -24,8 +27,7 @@ void main(void) {
 
   o_color.xyz *= v_color;
 
-  // TODO(tom): Move the following code into a library.
   o_color.xyz = applyFog(o_color.xyz);
-  o_color.xyz = pow(o_color.xyz, vec3(gamma));
+  o_color.xyz = tonemap(o_color.xyz);
 }
 
