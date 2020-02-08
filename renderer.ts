@@ -86,45 +86,6 @@ export class Renderer {
 
     this.shadow = new ProjectionShadow(ctx, lara.item, 256, 1280, 64);
 
-    // // Color texture.
-    // let colorTex = new toybox.Texture(ctx);
-    // colorTex.initialize(
-    //     ctx.canvas.width, ctx.canvas.height, null,
-    //     {filter: GL.NEAREST,
-    //      format: GL.RGBA,
-    //      type: GL.UNSIGNED_BYTE,
-    //      wrap: GL.CLAMP_TO_EDGE});
-
-    // // Depth texture.
-    // let depthTex = new toybox.Texture(ctx);
-    // depthTex.initializeDepth(ctx.canvas.width, ctx.canvas.height);
-
-    // Velocity texture.
-    // // TODO(tom): Use an UNSIGNED_BYTE texture instead.
-    // let velocityTex = new toybox.Texture(ctx);
-    // velocityTex.initialize(
-    //     ctx.canvas.width, ctx.canvas.height, null,
-    //     {filter: GL.NEAREST,
-    //      format: GL.RGBA,
-    //      type: GL.HALF_FLOAT_OES,
-    //      wrap: GL.CLAMP_TO_EDGE});
-
-    // // Temporal antialiasing textures.
-    // this.aaTexs_ = [new toybox.Texture(ctx), new toybox.Texture(ctx)];
-    // for (let i = 0; i < 2; ++i) {
-    //   this.aaTexs_[i].initialize(
-    //       ctx.canvas.width, ctx.canvas.height, null,
-    //       {filter: GL.LINEAR,
-    //        format: GL.RGBA,
-    //        type: GL.HALF_FLOAT_OES,
-    //        wrap: GL.CLAMP_TO_EDGE});
-    // }
-
-    // Frame buffers.
-    // this.sceneFb_ = new toybox.FrameBuffer(ctx, colorTex, depthTex);
-    // this.velocityFb_ = new toybox.FrameBuffer(ctx, velocityTex, depthTex);
-    // this.resolveFb_ = new toybox.FrameBuffer(ctx, this.aaTexs_[0], null);
-
     let lightTexDef: Texture2DDef = {
       width: scene.lightTex.width,
       height: scene.lightTex.height,
