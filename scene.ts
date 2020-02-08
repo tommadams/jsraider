@@ -15,6 +15,7 @@ import {Controller} from 'controllers/controller';
 import {Door} from 'controllers/door';
 import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
 import {Switch} from 'controllers/switch';
+import {TrapDoor} from 'controllers/trap_door';
 import {QuadBatch, TriBatch} from 'batch_builder';
 import {EntityType} from 'entity';
 import * as hacks from 'hacks';
@@ -201,6 +202,10 @@ export class Item {
   isSwitch() {
     return (this.type == EntityType.SWITCH ||
             this.type == EntityType.UNDERWATER_SWITCH);
+  }
+
+  isTrapDoor() {
+    return this.type >= EntityType.TRAP_DOOR_1 && this.type <= EntityType.TRAP_DOOR_2;
   }
 }
 
@@ -1425,7 +1430,7 @@ export class Scene {
       if (a.alternateRoom == -1) { continue; }
       let b = this.rooms[a.alternateRoom];
 
-      console.log(`flipping ${a.id} ${b.id}`);
+      console.log(`flipping rooms ${a.id} & ${b.id}`);
 
       // Swap portal sectors.
       for (let fd of this.floorData) {
@@ -2020,6 +2025,8 @@ export class Scene {
         controller = new Door(item, this);
       } else if (item.isSwitch()) {
         controller = new Switch(item, this);
+      } else if (item.isTrapDoor()) {
+        controller = new TrapDoor(item, this);
       } else {
         controller = new Controller(item, this);
       }

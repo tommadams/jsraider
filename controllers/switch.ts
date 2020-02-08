@@ -7,8 +7,7 @@ export class Switch extends Controller {
 
   constructor(item: Item, scene: Scene) {
     super(item, scene);
-    let sector = this.item.room.getSectorByPosition(this.item.position);
-    this.trigger = sector.floorData.trigger;
+    this.trigger = this.getSector().floorData.trigger;
   }
 
   activate() {

@@ -1,5 +1,5 @@
 import {Controller} from 'controllers/controller';
-import {Item, Scene, Sector, Trigger} from 'scene';
+import {Item, Scene} from 'scene';
 
 export class Door extends Controller {
   update(dt: number) {

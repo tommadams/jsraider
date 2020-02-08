@@ -180,24 +180,23 @@ export class Lara extends Controller {
       // item.rotation[1] = -0.4 * Math.PI;
       // item.room = this.scene.rooms[28];
     } else if (scene.name == 'LEVEL02.PHD') {
+      // vilcabamba - underwater switch
+      vec3.setFromValues(item.position, 71808, 1702, 18992);
+      item.rotation[1] = -0.5 * Math.PI;
+      item.room = this.scene.rooms[26];
+
       // vilcabamba - sprites
-      // item.position[0] = 72315;
-      // item.position[1] = 0;
-      // item.position[2] = 24906;
+      // vec3.setFromValues(item.position, 72315, 0, 24906);
       // item.rotation[1] = 2.7925;
       // item.room = this.scene.rooms[15];
 
       // vilcabamba - jump
-      // item.position[0] = 31251;
-      // item.position[1] = -2560;
-      // item.position[2] = 24704;
+      // vec3.setFromValues(item.position, 31251, -2560, 24704);
       // item.rotation[1] = Math.PI
       // item.room = this.scene.rooms[43];
 
       // vilcabamba - portals
-      // item.position[0] = 75545.078125;
-      // item.position[1] = 0;
-      // item.position[2] = 32897.54296875;
+      // vec3.setFromValues(item.position, 75545, 0, 32897);
       // item.rotation[1] = -1.326450231515698;
       // item.room = this.scene.rooms[85];
     } else if (scene.name == 'LEVEL03A.PHD') {
@@ -1712,7 +1711,14 @@ export class Lara extends Controller {
         let laraState, switchState: number;
         if (switchItem.animState.anim.state == Switch.State.DOWN) {
           switchState = Switch.State.UP;
-          laraState = State.SWITCH_UP;
+          // Like normal switches, underwater switches have both an "up" and
+          // a "down" state, however there Lara only has an underwater
+          // "pull down" animation.
+          if (this.locomotionType == LocomotionType.GROUND) {
+            laraState = State.SWITCH_UP;
+          } else {
+            laraState = State.SWITCH_DOWN;
+          }
         } else {
           switchState = Switch.State.DOWN;
           laraState = State.SWITCH_DOWN;

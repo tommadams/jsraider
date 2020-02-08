@@ -64,6 +64,10 @@ export class Controller {
     this.item.active = false;
   }
 
+  getSector() {
+    return this.item.room.getSectorByPosition(this.item.position);
+  }
+
   changeState(state: number) {
     if (!this.item.animState.tryChangeState(state)) {
       throw new Error(`Couldn't change ${EntityType[this.item.type]} state to ${state}`);
