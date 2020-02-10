@@ -70,12 +70,17 @@ export function applyPostInitHacks(levelName: string, scene: Scene) {
       break;
 
     case 'LEVEL03A.PHD':
-      // There's one broken bridge piece that that doesn't have proper
-      // collision, let's fix that.
+      // There's one broken fallen piece that that doesn't have proper
+      // collision. The reason is that the engine only supports one bridge piece
+      // in each sector and there's a real bridge above the fallen one. Fix this
+      // by moving the fallen piece to a neighbouring sector and adding
+      // collision.
       let fd = scene.rooms[56].sectorTable[16].floorData;
       let trigger = scene.rooms[56].sectorTable[16].floorData.trigger;
       trigger.actions.push({type: Trigger.Action.Type.ACTIVATE, parameter: 45});
+      scene.items[45].position[2] += 2048;
       scene.items[45].getComponent(Bridge).activate();
+      scene.items[45].controller.update(0);
       break;
   }
 }

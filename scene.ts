@@ -718,22 +718,16 @@ export class Sector {
    */
   getFloorAt(pos: vec3.Type) {
     let sector = this.getResolvedFloorSector();
+
+    // Calculate offset within sector in the range [0, 1);
     let u = pos[0] / 1024 - sector.i;
     let v = pos[2] / 1024 - sector.j;
     u = Math.max(0, Math.min(1, u));
     v = Math.max(0, Math.min(1, v));
 
-    let bridge = sector.floorData.bridge;
-    let y: number;
-    let slope: vec2.Type;
-    if (bridge != null && pos[1] - 640 <= bridge.floor) {
-      y = bridge.floor;
-      slope = bridge.slope;
-    } else {
-      y = sector.floor;
-      slope = sector.floorData.floorSlope;
-    }
-
+    // Get the real floor.
+    let y = sector.floor;
+    let slope = sector.floorData.floorSlope;
     if (slope[0] > 0) {
       y += slope[0] * (1 - u);
     } else {
@@ -743,6 +737,28 @@ export class Sector {
       y += slope[1] * (1 - v);
     } else {
       y -= slope[1] * v;
+    }
+
+    // If this sector has a bridge, and Lara is over the bridge, use that
+    // as the floor instead.
+    let bridge = sector.floorData.bridge;
+    if (bridge != null) {
+      let bridgeY = bridge.floor;
+      slope = bridge.slope;
+      if (slope[0] > 0) {
+        bridgeY += slope[0] * (1 - u);
+      } else {
+        bridgeY -= slope[0] * u;
+      }
+      if (slope[1] > 0) {
+        bridgeY += slope[1] * (1 - v);
+      } else {
+        bridgeY -= slope[1] * v;
+      }
+
+      if (pos[1] - 256 <= bridgeY) {
+        y = Math.min(y, bridgeY);
+      }
     }
 
     return y;
@@ -755,22 +771,16 @@ export class Sector {
    */
   getCeilingAt(pos: vec3.Type) {
     let sector = this.getResolvedCeilingSector();
+
+    // Calculate offset within sector in the range [0, 1);
     let u = pos[0] / 1024 - sector.i;
     let v = pos[2] / 1024 - sector.j;
     u = Math.max(0, Math.min(1, u));
     v = Math.max(0, Math.min(1, v));
 
-    let bridge = sector.floorData.bridge;
-    let y, number;
-    let slope: vec2.Type;
-    if (bridge != null && pos[1] - 768 <= bridge.floor) {
-      y = bridge.floor;
-      slope = bridge.slope;
-    } else {
-      y = sector.ceiling;
-      slope = sector.floorData.ceilingSlope;
-    }
-
+    // Get the real ceiling.
+    let y = sector.ceiling;
+    let slope = sector.floorData.ceilingSlope;
     if (slope[0] > 0) {
       y -= slope[0] * u;
     } else {
@@ -780,6 +790,28 @@ export class Sector {
       y -= slope[1] * (1 - v);
     } else {
       y += slope[1] * v;
+    }
+
+    // If this sector has a bridge, and Lara is under the bridge, use that
+    // as the ceiling height instead.
+    let bridge = this.getResolvedFloorSector().floorData.bridge;
+    if (bridge != null) {
+      let bridgeY = bridge.floor;
+      slope = bridge.slope;
+      if (slope[0] > 0) {
+        bridgeY += slope[0] * (1 - u);
+      } else {
+        bridgeY -= slope[0] * u;
+      }
+      if (slope[1] > 0) {
+        bridgeY += slope[1] * (1 - v);
+      } else {
+        bridgeY -= slope[1] * v;
+      }
+
+      if (pos[1] - 256 > bridgeY) {
+        y = Math.max(y, bridgeY);
+      }
     }
 
     return y;

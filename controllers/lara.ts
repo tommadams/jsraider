@@ -240,9 +240,9 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[1];
 
       // st francis' folly - item
-      vec3.setFromValues(item.position, 43136, 10752, 34307);
-      item.rotation[1] = 1.5 * Math.PI;
-      item.room = this.scene.rooms[13];
+      // vec3.setFromValues(item.position, 43136, 10752, 34307);
+      // item.rotation[1] = 1.5 * Math.PI;
+      // item.room = this.scene.rooms[13];
     } else if (scene.name == 'LEVEL05.PHD') {
       // colosseum
       // item.position[0] = 81537;
