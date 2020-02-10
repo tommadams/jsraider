@@ -230,9 +230,11 @@ export class Renderer {
 
       this.drawRoom(visibleRoom, needStencilMask);
     }
+
+    ctx.disable(GL.STENCIL_TEST);
   }
 
-  private drawTriBatches_(world: mat4.Type, tint: vec4.Type, batches: TriBatch[]) {
+  private drawTriBatches(world: mat4.Type, tint: vec4.Type, batches: TriBatch[]) {
     let ctx = this.ctx;
   
     mat4.mul(this.worldViewProj_, this.viewProj_, world);
@@ -253,7 +255,7 @@ export class Renderer {
     }
   }
   
-  private drawQuadBatches_(world: mat4.Type, tint: vec4.Type, batches: QuadBatch[]) {
+  private drawQuadBatches(world: mat4.Type, tint: vec4.Type, batches: QuadBatch[]) {
     let ctx = this.ctx;
   
     mat4.mul(this.worldViewProj_, this.viewProj_, world);
@@ -291,12 +293,12 @@ export class Renderer {
     if (stencilStaticMeshes) {
       ctx.enable(GL.STENCIL_TEST);
     }
-    this.drawQuadBatches_(this.identity_, this.getTint(room, 1), room.quadBatches);
+    this.drawQuadBatches(this.identity_, this.getTint(room, 1), room.quadBatches);
   
     for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
       let roomStaticMesh = room.renderableStaticMeshes[i];
       let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
-      this.drawQuadBatches_(
+      this.drawQuadBatches(
           roomStaticMesh.transform,
           this.getTint(room, roomStaticMesh.intensity),
           mesh.quadBatches);
@@ -314,7 +316,7 @@ export class Renderer {
       let moveable = item.moveable;
       for (let meshIdx of moveable.renderableMeshIndices) {
         let mesh = moveable.meshes[meshIdx];
-        this.drawQuadBatches_(
+        this.drawQuadBatches(
             animState.meshTransforms[meshIdx],
             this.getTint(room, item.intensity),
             mesh.quadBatches);
@@ -333,12 +335,12 @@ export class Renderer {
     if (stencilStaticMeshes) {
       ctx.enable(GL.STENCIL_TEST);
     }
-    this.drawTriBatches_(this.identity_, this.getTint(room, 1), room.triBatches);
+    this.drawTriBatches(this.identity_, this.getTint(room, 1), room.triBatches);
   
     for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
       let roomStaticMesh = room.renderableStaticMeshes[i];
       let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
-      this.drawTriBatches_(
+      this.drawTriBatches(
           roomStaticMesh.transform,
           this.getTint(room, roomStaticMesh.intensity),
           mesh.triBatches);
@@ -355,7 +357,7 @@ export class Renderer {
       let moveable = item.moveable;
       for (let meshIdx of moveable.renderableMeshIndices) {
         let mesh = moveable.meshes[meshIdx];
-        this.drawTriBatches_(
+        this.drawTriBatches(
             animState.meshTransforms[meshIdx],
             this.getTint(room, item.intensity),
             mesh.triBatches);

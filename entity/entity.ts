@@ -1,3 +1,12 @@
+import {Item} from 'scene';
+
+export class Component {
+  constructor(public item: Item) {}
+  activate() {}
+  deactivate() {}
+}
+
+// TODO(tom): rename to Entity.Type
 export enum EntityType {
   LARA = 0,
 

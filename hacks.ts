@@ -1,4 +1,5 @@
-import {Scene} from 'scene'
+import {Bridge} from 'entity/bridge'
+import {Scene, Trigger} from 'scene'
 
 export let stencilRooms: boolean[] = [];
 
@@ -16,11 +17,22 @@ function maybeSwapLara_(levelName: string, scene: Scene) {
 }
 
 export function applyPostLoadHacks(levelName: string, scene: Scene) {
-  if (levelName == 'LEVEL02.PHD') {
-    // Room 8 in City of Vilcabamba has two overlapping sprites.
-    // Remove one of them.
-    let room = scene.rooms[8];
-    room.sprites = new Uint16Array([room.sprites[0], room.sprites[1]]);
+  switch (levelName) {
+    case 'LEVLE02.PHD':
+      // Room 8 in City of Vilcabamba has two overlapping sprites.
+      // Remove one of them.
+      let room = scene.rooms[8];
+      room.sprites = new Uint16Array([room.sprites[0], room.sprites[1]]);
+    break;
+
+    case 'LEVEL03A.PHD':
+      // The broken bridge pieces are buried under the ground several world
+      // units, which is too far to fix by applying a polygonOffset when
+      // rendering without causing other artifacts. Instead, we nudge their
+      // position a bit.
+      scene.items[48].position[1] -= 8;
+      scene.items[49].position[1] -= 8;
+      break;
   }
 }
 
@@ -55,6 +67,15 @@ export function applyPostInitHacks(levelName: string, scene: Scene) {
       // Part of the underwater section of City of Vilcabamba overlaps the first
       // hub area.
       stencilRooms[26] = true;
+      break;
+
+    case 'LEVEL03A.PHD':
+      // There's one broken bridge piece that that doesn't have proper
+      // collision, let's fix that.
+      let fd = scene.rooms[56].sectorTable[16].floorData;
+      let trigger = scene.rooms[56].sectorTable[16].floorData.trigger;
+      trigger.actions.push({type: Trigger.Action.Type.ACTIVATE, parameter: 45});
+      scene.items[45].getComponent(Bridge).activate();
       break;
   }
 }

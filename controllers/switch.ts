@@ -7,7 +7,7 @@ export class Switch extends Controller {
 
   constructor(item: Item, scene: Scene) {
     super(item, scene);
-    this.trigger = this.getSector().floorData.trigger;
+    this.trigger = this.item.getSector().floorData.trigger;
   }
 
   activate() {

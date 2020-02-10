@@ -2,6 +2,18 @@ import {Controller} from 'controllers/controller';
 import {Door} from 'controllers/door';
 import {Item, Scene, Sector} from 'scene';
 
+export class TrapDoor extends Door {
+}
+
+
+
+/*
+import * as vec2 from 'toybox/math/vec2';
+
+import {Controller} from 'controllers/controller';
+import {Door} from 'controllers/door';
+import {Item, Scene, Sector} from 'scene';
+
 // TODO(tom): Trap door with underwater switch in Vilcabamba is broken:
 // if the trap door is shut when Lara surfaces, she will be teleported
 // above the trap door.
@@ -10,9 +22,14 @@ import {Item, Scene, Sector} from 'scene';
 // e.g. at the start of the cistern.
 
 export class TrapDoor extends Door {
+  slope = vec2.newZero();
+  floor: number;
+
   private floorSector: Sector;
   constructor(item: Item, scene: Scene) {
     super(item, scene);
+
+    this.floor = item.position[1];
     this.floorSector = this.getSector().getResolvedFloorSector();
     this.floorSector.floorData.bridge = this.item;
   }
@@ -39,3 +56,4 @@ export namespace TrapDoor {
     OPEN,
   }
 }
+*/

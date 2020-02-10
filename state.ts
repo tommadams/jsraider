@@ -1,5 +1,6 @@
 // MISSING entries are those that aren't present in Lara's animation graph (at
 // least on the levels I've tested).
+// TODO(tom): move to lara.ts and rename to Lara.State
 export enum State {
   NONE = -1,
 

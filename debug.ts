@@ -57,7 +57,7 @@ export let options = {
   triggers: false,
   slowMotion: false,
   sprites: false,
-  staticMeshes: true,
+  staticMeshes: false,
   stencilPortals: true,
 };
 

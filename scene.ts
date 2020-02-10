@@ -17,7 +17,8 @@ import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
 import {Switch} from 'controllers/switch';
 import {TrapDoor} from 'controllers/trap_door';
 import {QuadBatch, TriBatch} from 'batch_builder';
-import {EntityType} from 'entity';
+import {Component, EntityType} from 'entity/entity';
+import {Bridge} from 'entity/bridge';
 import * as hacks from 'hacks';
 import * as audio from 'audio';
 
@@ -104,6 +105,7 @@ export class Item {
   active = false;
   reverse = false;
   visible = true;
+  components: Component[] = [];
 
   constructor(rooms: Room[], stream: Stream) {
     this.type = stream.readUint16();
@@ -155,6 +157,19 @@ export class Item {
   }
   set activeMask(value: number) {
     this.flags = (this.flags & ~0x3e00) | ((value << 9) & 0x3e00);
+  }
+
+  getComponent<T extends Component>(ctor: new(...args: any[]) => T): T {
+    for (let comp of this.components) {
+      if (comp.constructor == ctor) {
+        return comp as T;
+      }
+    }
+    return null;
+  }
+
+  getSector() {
+    return this.room.getSectorByPosition(this.position);
   }
 
   // TODO(tom): make a controller type lookup table.
@@ -456,7 +471,7 @@ export class Trigger {
   timer: number;
   oneShot: boolean;
   mask: number;
-  actions: number[] = [];
+  actions: Trigger.Action[] = [];
 
   constructor(public type: number, bits: number) {
     this.timer = bits & 0xff;
@@ -486,21 +501,29 @@ export namespace Trigger {
     CLIMB = 16,
   }
 
-  export enum Action {
-    ACTIVATE = 0,
-    CAMERA_SWITCH = 1,
-    UNDERWATER_CURRENT = 2,
-    FLIP_MAP = 3,
-    FLIP_ON = 4,
-    FLIP_OFF = 5,
-    LOOK_AT = 6,
-    END_LEVEL = 7,
-    PLAY_MUSIC = 8,
-    FLIP_EFFECT = 9,
-    SECRET = 10,
-    CLEAR_BODIES = 11,
-    FLY_BY = 12,
-    CUTSCENE = 13,
+  export interface Action {
+    type: Trigger.Action.Type;
+    parameter: number;
+    parameter2?: number;
+  }
+
+  export namespace Action {
+    export enum Type {
+      ACTIVATE = 0,
+      CAMERA_SWITCH = 1,
+      UNDERWATER_CURRENT = 2,
+      FLIP_MAP = 3,
+      FLIP_ON = 4,
+      FLIP_OFF = 5,
+      LOOK_AT = 6,
+      END_LEVEL = 7,
+      PLAY_MUSIC = 8,
+      FLIP_EFFECT = 9,
+      SECRET = 10,
+      CLEAR_BODIES = 11,
+      FLY_BY = 12,
+      CUTSCENE = 13,
+    }
   }
 }
 
@@ -510,7 +533,7 @@ export class FloorData {
   portal: Room = null;
   kill = false;
   climbableWalls = 0;
-  bridge: Item = null;
+  bridge: Bridge = null;
   trigger: Trigger = null;
 }
 
@@ -557,7 +580,7 @@ export class Sector {
     return sector;
   }
 
-  /** Returns the sector that contains the ceiling floor (not a portal). */
+  /** Returns the sector that contains the ceiling (not a portal). */
   getResolvedCeilingSector() {
     let sector: Sector = this;
     while (sector.roomAbove != null) {
@@ -695,52 +718,31 @@ export class Sector {
    */
   getFloorAt(pos: vec3.Type) {
     let sector = this.getResolvedFloorSector();
-
-    let bridge = sector.floorData.bridge;
-    let y, fx, fz;
-    if (bridge != null && pos[1] - 640 <= bridge.position[1]) {
-      y = bridge.position[1];
-
-      // Figure out the bridge slope based on its type and rotation.
-      let slope = 0;
-      if (bridge.type == EntityType.BRIDGE_SLOPE_1) {
-        slope = 256;
-      } else if (bridge.type == EntityType.BRIDGE_SLOPE_2) {
-        slope = 512;
-      }
-
-      let dir = (bridge.rawRotation / 16384)|0;
-      dir = dir % 4;
-      if (dir < 0) { dir += 4; }
-
-      fx = 0;
-      fz = 0;
-      switch (dir) {
-        case 0: fx = slope; break;
-        case 1: fz = -slope; break;
-        case 2: fx = -slope; break;
-        case 3: fz = slope; break;
-      }
-    } else {
-      y = sector.floor;
-      fx = sector.floorData.floorSlope[0];
-      fz = sector.floorData.floorSlope[1];
-    }
-
     let u = pos[0] / 1024 - sector.i;
     let v = pos[2] / 1024 - sector.j;
     u = Math.max(0, Math.min(1, u));
     v = Math.max(0, Math.min(1, v));
 
-    if (fx > 0) {
-      y += fx * (1 - u);
+    let bridge = sector.floorData.bridge;
+    let y: number;
+    let slope: vec2.Type;
+    if (bridge != null && pos[1] - 640 <= bridge.floor) {
+      y = bridge.floor;
+      slope = bridge.slope;
     } else {
-      y -= fx * u;
+      y = sector.floor;
+      slope = sector.floorData.floorSlope;
     }
-    if (fz > 0) {
-      y += fz * (1 - v);
+
+    if (slope[0] > 0) {
+      y += slope[0] * (1 - u);
     } else {
-      y -= fz * v;
+      y -= slope[0] * u;
+    }
+    if (slope[1] > 0) {
+      y += slope[1] * (1 - v);
+    } else {
+      y -= slope[1] * v;
     }
 
     return y;
@@ -758,18 +760,26 @@ export class Sector {
     u = Math.max(0, Math.min(1, u));
     v = Math.max(0, Math.min(1, v));
 
-    let y = sector.ceiling;
-    let fx = sector.floorData.ceilingSlope[0];
-    let fz = sector.floorData.ceilingSlope[1];
-    if (fx > 0) {
-      y -= fx * u;
+    let bridge = sector.floorData.bridge;
+    let y, number;
+    let slope: vec2.Type;
+    if (bridge != null && pos[1] - 768 <= bridge.floor) {
+      y = bridge.floor;
+      slope = bridge.slope;
     } else {
-      y += fx * (1 - u);
+      y = sector.ceiling;
+      slope = sector.floorData.ceilingSlope;
     }
-    if (fz > 0) {
-      y -= fz * (1 - v);
+
+    if (slope[0] > 0) {
+      y -= slope[0] * u;
     } else {
-      y += fz * v;
+      y += slope[0] * (1 - u);
+    }
+    if (slope[1] > 0) {
+      y -= slope[1] * (1 - v);
+    } else {
+      y += slope[1] * v;
     }
 
     return y;
@@ -1308,40 +1318,40 @@ export class Scene {
       throw new Error('Version 0x' + this.version.toString(16) + ' != 0x20');
     }
 
-    this.textiles = this.readArray32_(stream, Textile);
+    this.textiles = this.readArray32(stream, Textile);
 
     stream.readUint32();  // ???
 
-    this.rooms = this.readArray16_(stream, Room);
+    this.rooms = this.readArray16(stream, Room);
     this.rawFloorData = stream.readUint16Array(stream.readUint32());
-    this.meshes = this.readMeshes_(stream);
-    this.animations = this.readArray32_(stream, Animation);
-    this.stateChanges = this.readArray32_(stream, StateChange);
-    this.animDispatches = this.readArray32_(stream, AnimDispatch);
+    this.meshes = this.readMeshes(stream);
+    this.animations = this.readArray32(stream, Animation);
+    this.stateChanges = this.readArray32(stream, StateChange);
+    this.animDispatches = this.readArray32(stream, AnimDispatch);
     this.animCommands = stream.readInt16Array(stream.readUint32());
     this.meshTrees = stream.readInt32Array(stream.readUint32());
     this.rawFrames = stream.readUint16Array(stream.readUint32());
-    this.moveables = this.readArray32_(stream, Moveable);
-    this.staticMeshes = this.readArray32_(stream, StaticMesh);
-    this.objectTextures = this.readArray32_(stream, ObjectTexture);
-    this.spriteTextures = this.readArray32_(stream, SpriteTexture);
-    this.spriteSequences = this.readArray32_(stream, SpriteSequence);
-    this.cameras = this.readArray32_(stream, SceneCamera);
-    this.soundSources = this.readArray32_(stream, SoundSource);
-    this.boxes = this.readArray32_(stream, Box);
+    this.moveables = this.readArray32(stream, Moveable);
+    this.staticMeshes = this.readArray32(stream, StaticMesh);
+    this.objectTextures = this.readArray32(stream, ObjectTexture);
+    this.spriteTextures = this.readArray32(stream, SpriteTexture);
+    this.spriteSequences = this.readArray32(stream, SpriteSequence);
+    this.cameras = this.readArray32(stream, SceneCamera);
+    this.soundSources = this.readArray32(stream, SoundSource);
+    this.boxes = this.readArray32(stream, Box);
     this.overlaps = stream.readUint16Array(stream.readUint32());
     this.zones = stream.readUint16Array(6 * this.boxes.length);
-    this.animatedTextures = this.readAnimatedTextures_(stream);
-    this.items = this.readArray32_(stream, Item.bind(null, this.rooms));
+    this.animatedTextures = this.readAnimatedTextures(stream);
+    this.items = this.readArray32(stream, Item.bind(null, this.rooms));
 
     // Skip the light map.
     stream.readUint8Array(32 * 256);
 
     this.palette = stream.readUint8Array(3 * 256);
-    this.cinematicFrames = this.readArray16_(stream, CinematicFrame);
+    this.cinematicFrames = this.readArray16(stream, CinematicFrame);
     this.demoData = stream.readUint8Array(stream.readUint16());
     this.soundMap = stream.readInt16Array(256);
-    this.soundDetails = this.readArray32_(stream, SoundDetails);
+    this.soundDetails = this.readArray32(stream, SoundDetails);
     this.samples = stream.readUint8Array(stream.readUint32());
     this.sampleIndices = stream.readUint32Array(stream.readUint32());
 
@@ -1351,10 +1361,10 @@ export class Scene {
 
     hacks.applyPostLoadHacks(name, this);
 
-    this.convertPalette_();
+    this.convertPalette();
 
-    this.frames = this.parseAnimations_();
-    this.floorData = this.parseFloorData_();
+    this.frames = this.parseAnimations();
+    this.floorData = this.parseFloorData();
 
     // Set the id in each texture (useful when sorting out animated textures, and
     // packing them into an atlas).
@@ -1367,10 +1377,10 @@ export class Scene {
 
     // Create texture atlas with some padding around each source texture.
     let atlas = new TextureAtlas(4096, 2048, 16);
-    let rgbaTiles = this.create32bitTiles_();
-    this.atlasObjectTextures = this.createAtlasObjectTextures_(rgbaTiles, atlas);
-    this.atlasSpriteTextures_(rgbaTiles, atlas);
-    this.flatWhiteTexture = this.createFlatWhiteTexture_(atlas);
+    let rgbaTiles = this.create32bitTiles();
+    this.atlasObjectTextures = this.createAtlasObjectTextures(rgbaTiles, atlas);
+    this.atlasSpriteTextures(rgbaTiles, atlas);
+    this.flatWhiteTexture = this.createFlatWhiteTexture(atlas);
     atlas.dilateOpaque();
     this.atlasTex = {
       width: atlas.width,
@@ -1421,7 +1431,7 @@ export class Scene {
       seq.init(ctx, this);
     }
 
-    this.createControllers();
+    this.createComponents();
   }
 
   flipRooms() {
@@ -1466,24 +1476,23 @@ export class Scene {
    * Run all the actions in the floor func.
    * @param func
    * @param begin the index of actions to start from. For most triggers, `begin`
-   *        should be 1 (because index 0 is the triggerMask, oneShot & other
-   *        flags). For pickup or switch triggers, `begin` should be 2 because
-   *        index 1 is the entity being interacted with.
+   *        should be 0 (because index 0 is the triggerMask, oneShot & other
+   *        flags). For pickup or switch triggers, `begin` should be 1 because
+   *        index 0 is the entity being interacted with.
    */
   runActions(trigger: Trigger, begin: number) {
     let needFlip = false;
 
     for (let i = begin; i < trigger.actions.length; ++i) {
-      let action = (trigger.actions[i] >> 10) & 0xf;
-      let parameter = trigger.actions[i] & 0x3ff;
-      switch (action) {
-        case Trigger.Action.ACTIVATE:
-          if (parameter >= this.controllers.length) {
-            console.log(`Activate item index ${parameter} out of range`);
+      let action = trigger.actions[i];
+      switch (action.type) {
+        case Trigger.Action.Type.ACTIVATE:
+          if (action.parameter >= this.controllers.length) {
+            console.log(`Activate item index ${action.parameter} out of range`);
             continue;
           }
 
-          let item = this.items[parameter];
+          let item = this.items[action.parameter];
           // TODO(tom): oneShot handling
           // TODO(tom): timer handling
 
@@ -1499,21 +1508,20 @@ export class Scene {
           item.controller.activate();
           break;
 
-        case Trigger.Action.CAMERA_SWITCH:
-          let parameter2 = trigger.actions[i++];
+        case Trigger.Action.Type.CAMERA_SWITCH:
           // TODO(tom)
           break;
 
-        case Trigger.Action.UNDERWATER_CURRENT:
+        case Trigger.Action.Type.UNDERWATER_CURRENT:
           // TODO(tom)
           break;
 
-        case Trigger.Action.FLIP_MAP:
+        case Trigger.Action.Type.FLIP_MAP:
           // Lazily create the flip map entries.
-          let flip = this.flipMap[parameter];
+          let flip = this.flipMap[action.parameter];
           if (flip == null) {
             flip = new FlipMapEntry();
-            this.flipMap[parameter] = flip;
+            this.flipMap[action.parameter] = flip;
           }
 
           if (flip.once) { break; }
@@ -1528,46 +1536,46 @@ export class Scene {
           }
           break;
 
-        case Trigger.Action.FLIP_ON:
+        case Trigger.Action.Type.FLIP_ON:
           // TODO(tom)
           break;
 
-        case Trigger.Action.FLIP_OFF:
+        case Trigger.Action.Type.FLIP_OFF:
           // TODO(tom)
           break;
 
-        case Trigger.Action.LOOK_AT:
+        case Trigger.Action.Type.LOOK_AT:
           // TODO(tom)
           break;
 
-        case Trigger.Action.END_LEVEL:
+        case Trigger.Action.Type.END_LEVEL:
           // TODO(tom)
           break;
 
-        case Trigger.Action.FLIP_EFFECT:
+        case Trigger.Action.Type.FLIP_EFFECT:
           // TODO(tom)
           break;
 
-        case Trigger.Action.PLAY_MUSIC:
-          audio.playTrack(parameter, trigger.mask);
+        case Trigger.Action.Type.PLAY_MUSIC:
+          audio.playTrack(action.parameter, trigger.mask);
           break;
 
-        case Trigger.Action.SECRET:
-          if (!this.secretsFound[parameter]) {
-            this.secretsFound[parameter] = true;
+        case Trigger.Action.Type.SECRET:
+          if (!this.secretsFound[action.parameter]) {
+            this.secretsFound[action.parameter] = true;
             audio.playSecret();
           }
           break;
 
-        case Trigger.Action.CLEAR_BODIES:
+        case Trigger.Action.Type.CLEAR_BODIES:
           // TODO(tom)
           break;
 
-        case Trigger.Action.FLY_BY:
+        case Trigger.Action.Type.FLY_BY:
           // TODO(tom)
           break;
 
-        case Trigger.Action.CUTSCENE:
+        case Trigger.Action.Type.CUTSCENE:
           // TODO(tom)
           break;
       }
@@ -1578,7 +1586,7 @@ export class Scene {
     }
   }
 
-  private readMeshes_(stream: Stream) {
+  private readMeshes(stream: Stream) {
     let size = 2 * stream.readUint32();
     let begin = stream.getOfs();
     stream.setOfs(begin + size);
@@ -1602,7 +1610,7 @@ export class Scene {
     return meshes;
   }
 
-  private readAnimatedTextures_(stream: Stream) {
+  private readAnimatedTextures(stream: Stream) {
     let data = stream.readUint16Array(stream.readUint32());
     let textures = new Array(data[0]);
     let idx = 1;
@@ -1620,7 +1628,7 @@ export class Scene {
 
   // TODO(tom): don't convert the palette: the top bit of the palette entry
   // determines if a polygon is double-sided or not and we need to preserve that.
-  private convertPalette_() {
+  private convertPalette() {
     let palette = new Uint8Array(4 * 256);
     // Leave the first palette entry as transparent black.
     for (let i = 1; i < 256; ++i) {
@@ -1632,7 +1640,7 @@ export class Scene {
     this.palette = palette;
   }
 
-  private parseAnimations_() {
+  private parseAnimations() {
     let parsed = parseFrames(this.rawFrames);
     let frameRemap = parsed.remap;
     let parsedFrames = parsed.frames;
@@ -1686,7 +1694,7 @@ export class Scene {
     return parsedFrames;
   }
 
-  private parseFloorData_() {
+  private parseFloorData() {
     let decodeSlope = function(data: number, result: vec2.Type) {
       let x = data & 0xff;
       let z = (data >> 8) & 0xff;
@@ -1748,8 +1756,15 @@ export class Scene {
                     'Ran off the end of the rawFloorData array: ' + idx +
                     ' >= ' + this.rawFloorData.length);
               }
-              // Strip the 'more data' bit from the action bits..
-              parsed.trigger.actions.push(this.rawFloorData[idx] & 0x7fff);
+              let bits = this.rawFloorData[idx] & 0x7fff;
+              let type = (bits >> 10) & 0xf;
+              let parameter = bits & 0x3ff;
+              if (type == Trigger.Action.Type.CAMERA_SWITCH) {
+                let parameter2 = this.rawFloorData[++idx] & 0x7fff;
+                parsed.trigger.actions.push({type, parameter, parameter2});
+              } else {
+                parsed.trigger.actions.push({type, parameter});
+              }
             } while ((this.rawFloorData[idx++] & 0x8000) == 0);
             break;
 
@@ -1764,21 +1779,6 @@ export class Scene {
           default:
             throw new Error(`Unrecognized floor func type: ${funcType}`);
         }
-
-        // Check if the sector has a bridge piece.
-        if (parsed.trigger != null &&
-            parsed.trigger.type == Trigger.Type.TRIGGER_ON) {
-          for (let i = 0; i < parsed.trigger.actions.length; ++i) {
-            let bits = parsed.trigger.actions[0];
-            let action = (bits >> 10) & 0xf;
-            let parameter = bits & 0x3ff;
-            if (action == Trigger.Action.ACTIVATE &&
-                parameter < this.items.length &&
-                this.items[parameter].isBridge()) {
-              parsed.bridge = this.items[parameter];
-            }
-          }
-        }
       } while (!end);
       parsedFloorData.push(parsed);
     }
@@ -1791,8 +1791,7 @@ export class Scene {
     // Remap indices into the raw data to the parsed array.
     for (let roomIdx = 0; roomIdx < this.rooms.length; ++roomIdx) {
       let room = this.rooms[roomIdx];
-      for (let i = 0; i < room.sectorTable.length; ++i) {
-        let sector = room.sectorTable[i];
+      for (let sector of room.sectorTable) {
         if (remap[sector.floorDataIdx] === undefined) {
           throw new Error(`floor data ${sector.floorDataIdx} undefined`);
         }
@@ -1830,7 +1829,7 @@ export class Scene {
   /**
    * @return {Uint8Array[]} 32bit copies of each textile in the scene.
    */
-  private create32bitTiles_() {
+  private create32bitTiles() {
     /*
     let pushTex = function(width: number, height: number, data: Uint8Array) {
       let canvas = document.createElement('canvas');
@@ -1872,7 +1871,7 @@ export class Scene {
     return rgbaTiles;
   }
 
-  private createAtlasObjectTextures_(rgbaTiles: Uint8Array[], atlas: TextureAtlas) {
+  private createAtlasObjectTextures(rgbaTiles: Uint8Array[], atlas: TextureAtlas) {
     // Sort object textures by decreasing height before inserting into the atlas.
     // The current texture atlasing algorithm is very simple, so this sorting
     // improves its packing efficiency considerably.
@@ -1931,7 +1930,7 @@ export class Scene {
    * @param rgbaTiles 32bit copies of each textile
    * @param atlas
    */
-  private atlasSpriteTextures_(rgbaTiles: Uint8Array[], atlas: TextureAtlas) {
+  private atlasSpriteTextures(rgbaTiles: Uint8Array[], atlas: TextureAtlas) {
     this.spriteTextures.sort((a, b) => {
       let dh = a.uvBounds.height - b.uvBounds.height;
       if (dh != 0) { return dh; }
@@ -1966,7 +1965,7 @@ export class Scene {
     this.spriteTextures.sort((a, b) => { return a.id - b.id; });
   }
 
-  private createFlatWhiteTexture_(atlas: TextureAtlas) {
+  private createFlatWhiteTexture(atlas: TextureAtlas) {
     // Create a solid white texture in the atlas for use with flat shaded models.
     let data = new Uint8Array(4 * 8 * 8);
     data.fill(0xff);
@@ -1989,15 +1988,15 @@ export class Scene {
     return flatWhiteTexture;
   }
 
-  private readArray16_<T>(stream: Stream, ctor: {new(stream: Stream): T}): T[] {
-    return this.readArray_(stream, ctor, stream.readUint16());
+  private readArray16<T>(stream: Stream, ctor: {new(stream: Stream): T}): T[] {
+    return this.readArray(stream, ctor, stream.readUint16());
   }
 
-  private readArray32_<T>(stream: Stream, ctor: {new(stream: Stream): T}): T[] {
-    return this.readArray_(stream, ctor, stream.readUint32());
+  private readArray32<T>(stream: Stream, ctor: {new(stream: Stream): T}): T[] {
+    return this.readArray(stream, ctor, stream.readUint32());
   }
 
-  private readArray_<T>(stream: Stream, ctor: {new(stream: Stream): T}, num: number): T[] {
+  private readArray<T>(stream: Stream, ctor: {new(stream: Stream): T}, num: number): T[] {
     let array = new Array(num);
     for (let i = 0; i < num; ++i) {
       array[i] = new ctor(stream);
@@ -2005,7 +2004,7 @@ export class Scene {
     return array;
   }
 
-  private createControllers() {
+  private createComponents() {
     this.controllers = [];
     for (let item of this.items) {
       if (item.animState != null) {
@@ -2021,12 +2020,16 @@ export class Scene {
         controller = this.lara;
       } else if (item.isBlock()) {
         controller = new Block(item, this);
+      } else if (item.isBridge()) {
+        controller = new Controller(item, this);
+        item.components.push(new Bridge(item));
       } else if (item.isDoor()) {
         controller = new Door(item, this);
       } else if (item.isSwitch()) {
         controller = new Switch(item, this);
       } else if (item.isTrapDoor()) {
         controller = new TrapDoor(item, this);
+        item.components.push(new Bridge(item));
       } else {
         controller = new Controller(item, this);
       }
@@ -2040,6 +2043,32 @@ export class Scene {
 
     if (this.lara == null) {
       throw 'Couldn\'t find Lara :(';
+    }
+
+    // Activate bridge components.
+    // These need to be activated before Lara stands on the trigger otherwise
+    // she won't be able to walk on them.
+    for (let room of this.rooms) {
+      for (let sector of room.sectorTable) {
+        let trigger = sector.floorData.trigger;
+        if (trigger == null || trigger.type != Trigger.Type.TRIGGER_ON) {
+          continue;
+        }
+
+        for (let action of trigger.actions) {
+          if (action.type != Trigger.Action.Type.ACTIVATE) {
+            continue;
+          }
+          let item = this.items[action.parameter];
+          if (item.isBridge() || item.isTrapDoor()) {
+            let bridge = item.getComponent(Bridge);
+            console.log(`activating bridge ${action.parameter} ${room.id} ${room.sectorTable.indexOf(sector)}`);
+            if (bridge != null) {
+              bridge.activate();
+            }
+          }
+        }
+      }
     }
   }
 }

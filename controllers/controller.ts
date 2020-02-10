@@ -2,7 +2,7 @@ import * as mat4 from 'toybox/math/mat4'
 import * as vec3 from 'toybox/math/vec3'
 
 import {AnimCommand, AnimState} from 'animation'
-import {EntityType} from 'entity';
+import {EntityType} from 'entity/entity';
 import {Item, Scene} from 'scene'
 import {resolveRoomByPosition} from 'collision'
 
@@ -56,16 +56,18 @@ export class Controller {
     if (this.item.active) { return false; }
     this.item.active = true;
     this.item.visible = true;
+    for (let comp of this.item.components) {
+      comp.activate();
+    }
     return true;
   }
 
   deactivate() {
     // TODO(tom): maybe the active bit should live on the controller not the item.
     this.item.active = false;
-  }
-
-  getSector() {
-    return this.item.room.getSectorByPosition(this.item.position);
+    for (let comp of this.item.components) {
+      comp.deactivate();
+    }
   }
 
   changeState(state: number) {

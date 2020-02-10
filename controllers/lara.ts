@@ -8,7 +8,7 @@ import {Block} from 'controllers/block';
 import {Intersection, moveCharacter, resolveRoomByGrid, resolveRoomByPosition} from 'collision';
 import {Controller} from 'controllers/controller';
 import {Switch} from 'controllers/switch';
-import {EntityType} from 'entity';
+import {EntityType} from 'entity/entity';
 import {Item, Room, Scene, Sector, Trigger} from 'scene';
 import {Input} from 'input';
 import {SlidingConstraints} from 'sliding_constraints';
@@ -161,9 +161,9 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[9];
     } else if (scene.name == 'LEVEL01.PHD') {
       // caves - bridge
-      // vec3.setFromValues(item.position, 25122, 4352, 55814);
-      // item.rotation[1] = Math.PI;
-      // item.room = this.scene.rooms[13];
+      vec3.setFromValues(item.position, 25122, 4352, 55814);
+      item.rotation[1] = Math.PI;
+      item.room = this.scene.rooms[13];
 
       // caves - switch
       // vec3.setFromValues(item.position, 50831, 7680, 57704);
@@ -201,56 +201,29 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[85];
     } else if (scene.name == 'LEVEL03A.PHD') {
       // lost valley - pick up
-      // item.position[0] = 27128;
-      // item.position[1] = -3584;
-      // item.position[2] = 1530;
+      // vec3.setFromValues(item.position, 27128, -3584, 1530);
       // item.rotation[1] = Math.PI;
       // item.room = this.scene.rooms[40];
 
       // lost valley - waterfall climb
-      // item.position[0] = 44539;
-      // item.position[1] = 2624;
-      // item.position[2] = 5248;
+      // vec3.setFromValues(item.position, 44539, 2624, 5248);
       // item.rotation[1] = -Math.PI;
       // item.room = this.scene.rooms[59];
 
       // lost valley - inside waterfall
-      // item.position[0] = 40831;
-      // item.position[1] = -512;
-      // item.position[2] = 2338;
+      // vec3.setFromValues(item.position, 40831, -512, 2338);
       // item.rotation[1] = Math.PI;
       // item.room = this.scene.rooms[31];
 
       // lost valley
-      // item.position[0] = 32639;
-      // item.position[1] = 4960;
-      // item.position[2] = 48256;
+      // vec3.setFromValues(item.position, 32639, 4960, 48256);
       // item.rotation[1] = 0.5 * Math.PI;
       // item.room = this.scene.rooms[16];
-    } else if (scene.name == 'LEVEL05.PHD') {
-      vec3.setFromValues(this.item.position, 59031, -4608, 64042);
-      item.rotation[1] = 0.37;
-      item.room = this.scene.rooms[41];
-    } else if (scene.name == 'LEVEL07A.PHD') {
-      // the cistern - entrance
-      // this.item.position[0] = 45549; 
-      // this.item.position[1] = -3328;
-      // this.item.position[2] = 67050;
-      // this.item.rotation[1] = 3.0892367362976074;
-      // this.item.room = this.scene.rooms[7];
 
-      // the cistern - block
-      // this.item.position[0] = 46207;
-      // this.item.position[1] = -5632;
-      // this.item.position[2] = 71234;
-      // this.item.rotation[1] = -0.5 * Math.PI
-      // this.item.room = this.scene.rooms[4];
-      // this.scene.items[7].position[0] = 45568; 
-      // this.scene.items[7].position[1] = -5632;
-      // this.scene.items[7].position[2] = 71168;
-      // this.scene.items[7].rotation[1] = -0.5 * Math.PI
-      // this.scene.items[7].room = this.scene.rooms[4];
-      // this.scene.items[7].room.getSectorByPosition(this.scene.items[7].position).floor -= 1024;
+      // lost valley - buried bridge pieces
+      vec3.setFromValues(item.position, 39351, 3584, 23691);
+      item.rotation[1] = Math.PI;
+      item.room = this.scene.rooms[56];
     } else if (scene.name == 'LEVEL04.PHD') {
       // st francis' folly - block
       // item.position[0] = 31217;
@@ -270,13 +243,18 @@ export class Lara extends Controller {
       vec3.setFromValues(item.position, 43136, 10752, 34307);
       item.rotation[1] = 1.5 * Math.PI;
       item.room = this.scene.rooms[13];
-    } else if (scene.name == 'LEVLE05.PHD') {
+    } else if (scene.name == 'LEVEL05.PHD') {
       // colosseum
       // item.position[0] = 81537;
       // item.position[1] = 0;
       // item.position[2] = 38783;
       // item.rotation[1] = 0;
       // item.room = this.scene.rooms[4];
+
+      // colosseum - slamming door
+      // vec3.setFromValues(this.item.position, 59031, -4608, 64042);
+      // item.rotation[1] = 0.37;
+      // item.room = this.scene.rooms[41];
     } else if (scene.name == 'LEVLE06.PHD') {
       // palace midas
       // item.position[0] = 37147;
@@ -284,6 +262,22 @@ export class Lara extends Controller {
       // item.position[2] = 29231;
       // item.rotation[1] = 0.5 * Math.PI;
       // item.room = this.scene.rooms[42];
+    } else if (scene.name == 'LEVEL07A.PHD') {
+      // the cistern - entrance
+      // this.item.position[0] = 45549;
+      // this.item.position[1] = -3328;
+      // this.item.position[2] = 67050;
+      // this.item.rotation[1] = 3.0892367362976074;
+      // this.item.room = this.scene.rooms[7];
+
+      // the cistern - block
+      // vec3.setFromValues(this.item.position, 46207, -5632, 71234);
+      // this.item.rotation[1] = -0.5 * Math.PI
+      // this.item.room = this.scene.rooms[4];
+      // vec3.setFromValues(this.scene.items[7].position, 45568, -5632, 71168);
+      // this.scene.items[7].rotation[1] = -0.5 * Math.PI
+      // this.scene.items[7].room = this.scene.rooms[4];
+      // this.scene.items[7].room.getSectorByPosition(this.scene.items[7].position).floor -= 1024;
     }
 
     this.sector = this.item.room.getSectorByPosition(this.item.position);
@@ -1116,34 +1110,35 @@ export class Lara extends Controller {
       return this.state;
     }
   
-    if (this.state != State.SLIDE && this.state != State.SLIDE_BACK) {
-      let sx = this.sector.floorData.floorSlope[0];
-      let sz = this.sector.floorData.floorSlope[1];
-      let dx = this.item.animState.transform[8];
-      let dz = this.item.animState.transform[10];
-      let back;
-      if (Math.abs(sx) > Math.abs(sz)) {
-        back = (dx * sx) > 0;
-        if (back) {
-          this.item.rotation[1] = (sx > 0) ? 0.5 : 1.5;
-        } else {
-          this.item.rotation[1] = (sx > 0) ? 1.5 : 0.5;
-        }
-      } else {
-        back = (dz * sz) > 0;
-        if (back) {
-          this.item.rotation[1] = (sz > 0) ? 0 : 1;
-        } else {
-          this.item.rotation[1] = (sz > 0) ? 1 : 0;
-        }
-      }
-      this.item.rotation[1] *= Math.PI;
-  
+    let back: boolean;
+    let sx = this.sector.floorData.floorSlope[0];
+    let sz = this.sector.floorData.floorSlope[1];
+    let dx = this.item.animState.transform[8];
+    let dz = this.item.animState.transform[10];
+    if (Math.abs(sx) > Math.abs(sz)) {
+      back = (dx * sx) > 0;
       if (back) {
+        this.item.rotation[1] = ((sx > 0) ? 0.5 : 1.5) * Math.PI;
+      } else {
+        this.item.rotation[1] = ((sx > 0) ? 1.5 : 0.5) * Math.PI;
+      }
+    } else {
+      back = (dz * sz) > 0;
+      if (back) {
+        this.item.rotation[1] = ((sz > 0) ? 0 : 1) * Math.PI;
+      } else {
+        this.item.rotation[1] = ((sz > 0) ? 1 : 0) * Math.PI;
+      }
+    }
+
+    if (back) {
+      if (this.state != State.SLIDE_BACK) {
         let anim = this.scene.animations[AnimationId.START_BACK_SLIDE];
         this.item.animState.setAnim(anim, anim.firstFrame);
         this.state = State.SLIDE_BACK;
-      } else {
+      }
+    } else {
+      if (this.state != State.SLIDE) {
         let anim = this.scene.animations[AnimationId.SLIDE];
         this.item.animState.setAnim(anim, anim.firstFrame);
         this.state = State.SLIDE;
@@ -1607,54 +1602,50 @@ export class Lara extends Controller {
                  `mask:0x${trigger.mask.toString(16)} ` +
                  `oneShot:${trigger.oneShot}`);
 
-      for (let i = 0; i < trigger.actions.length; ++i) {
-        let bits = trigger.actions[i];
-        let action = (bits >> 10) & 0xf;
-        let parameter = bits & 0x3ff;
+      for (let action of trigger.actions) {
         let line: string;
 
-        switch (action) {
-          case Trigger.Action.ACTIVATE:
-            line = `action:ACTIVATE idx:${parameter}`;
-            if (parameter < this.scene.items.length) {
-              let itemType = this.scene.items[parameter].type;
+        switch (action.type) {
+          case Trigger.Action.Type.ACTIVATE:
+            line = `action:ACTIVATE idx:${action.parameter}`;
+            if (action.parameter < this.scene.items.length) {
+              let itemType = this.scene.items[action.parameter].type;
               let typeName = EntityType[itemType];
               if (typeName == null) { typeName = `UNDEFINED<${itemType}>`; }
               line += ` type:${typeName}`;
             } else {
               line += ` out of range (${this.scene.items.length})`;
             }
-            line += ` mask:0x${this.scene.items[parameter].activeMask.toString(16)}`;
+            line += ` mask:0x${this.scene.items[action.parameter].activeMask.toString(16)}`;
             break;
 
-          case Trigger.Action.PLAY_MUSIC:
-            line = `action:PLAY_MUSIC track:${parameter}`;
+          case Trigger.Action.Type.PLAY_MUSIC:
+            line = `action:PLAY_MUSIC track:${action.parameter}`;
             break;
 
-          case Trigger.Action.SECRET:
-            line = `action:SECRET idx:${parameter}`;
+          case Trigger.Action.Type.SECRET:
+            line = `action:SECRET idx:${action.parameter}`;
             break;
 
-          case Trigger.Action.CAMERA_SWITCH:
-            let parameter2 = trigger.actions[i++];
-            let time = parameter2 & 0xff;
-            let once = ((parameter2 >> 8) & 1) == 0;
-            let moveTimer = (parameter2 >> 9) & 0x1f;
-            line = `action:CAMERA idx:${parameter} time:${time} once:${once} move:${moveTimer}`;
+          case Trigger.Action.Type.CAMERA_SWITCH:
+            let time = action.parameter2 & 0xff;
+            let once = ((action.parameter2 >> 8) & 1) == 0;
+            let moveTimer = (action.parameter2 >> 9) & 0x1f;
+            line = `action:CAMERA idx:${action.parameter} time:${time} once:${once} move:${moveTimer}`;
             break;
 
-          case Trigger.Action.FLIP_EFFECT:
-          case Trigger.Action.UNDERWATER_CURRENT:
-          case Trigger.Action.FLIP_MAP:
-          case Trigger.Action.FLIP_ON:
-          case Trigger.Action.FLIP_OFF:
-          case Trigger.Action.LOOK_AT:
-          case Trigger.Action.END_LEVEL:
-            line = `action:${Trigger.Action[action]} 0x${parameter.toString(16)}`;
+          case Trigger.Action.Type.FLIP_EFFECT:
+          case Trigger.Action.Type.UNDERWATER_CURRENT:
+          case Trigger.Action.Type.FLIP_MAP:
+          case Trigger.Action.Type.FLIP_ON:
+          case Trigger.Action.Type.FLIP_OFF:
+          case Trigger.Action.Type.LOOK_AT:
+          case Trigger.Action.Type.END_LEVEL:
+            line = `action:${Trigger.Action.Type[action.type]} 0x${action.parameter.toString(16)}`;
             break;
 
           default:
-            line = `action:UNKNOWN<${action}> 0x${parameter.toString(16)}`;
+            line = `action:UNKNOWN<${action}> 0x${action.parameter.toString(16)}`;
             break;
         }
 
@@ -1707,7 +1698,7 @@ export class Lara extends Controller {
         }
 
         actionStart = 1;
-        let switchItem = this.scene.items[trigger.actions[0] & 0x3ff];
+        let switchItem = this.scene.items[trigger.actions[0].parameter];
         let laraState, switchState: number;
         if (switchItem.animState.anim.state == Switch.State.DOWN) {
           switchState = Switch.State.UP;
@@ -1737,7 +1728,7 @@ export class Lara extends Controller {
         break;
 
       case Trigger.Type.PICK_UP:
-        if (this.scene.items[trigger.actions[0] & 0x3ff] != this.interactingItem ||
+        if (this.scene.items[trigger.actions[0].parameter] != this.interactingItem ||
             this.interactingItem.visible) {
           return;
         }
