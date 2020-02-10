@@ -215,15 +215,16 @@ export class Lara extends Controller {
       // item.rotation[1] = Math.PI;
       // item.room = this.scene.rooms[31];
 
-      // lost valley
-      // vec3.setFromValues(item.position, 32639, 4960, 48256);
-      // item.rotation[1] = 0.5 * Math.PI;
-      // item.room = this.scene.rooms[16];
+      // lost valley - jump forwards onto slope gets lara stuck in fall state
+      // because of floating point precision.
+      vec3.setFromValues(item.position, 59683.7, 3584.0, 5786.6);
+      item.rotation[1] = 2.76;
+      item.room = this.scene.rooms[61];
 
       // lost valley - buried bridge pieces
-      vec3.setFromValues(item.position, 39351, 3584, 23691);
-      item.rotation[1] = Math.PI;
-      item.room = this.scene.rooms[56];
+      // vec3.setFromValues(item.position, 39351, 3584, 23691);
+      // item.rotation[1] = Math.PI;
+      // item.room = this.scene.rooms[56];
     } else if (scene.name == 'LEVEL04.PHD') {
       // st francis' folly - block
       // item.position[0] = 31217;
@@ -465,12 +466,12 @@ export class Lara extends Controller {
     }
   
     // Check that the floor slope is not too steep.
-    if (this.di == 0) {
-      if (Math.abs(sector.floorData.floorSlope[0]) > 512) {
+    if (this.di != 0) {
+      if (Math.abs(sector.floorData.floorSlope[1]) > 512) {
         return;
       }
     } else {
-      if (Math.abs(sector.floorData.floorSlope[1]) > 512) {
+      if (Math.abs(sector.floorData.floorSlope[0]) > 512) {
         return;
       }
     }
