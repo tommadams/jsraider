@@ -576,7 +576,8 @@ export class Lara extends Controller {
     let slide = Math.abs(sx) > 512 || Math.abs(sz) > 512;
   
     if (this.locomotionType == LocomotionType.AIR) {
-      if (this.item.position[1] >= floor) {
+      if (this.item.position[1] + 1 >= floor) {
+        this.item.position[1] = floor;
         let animState = this.item.animState;
         if (this.velocity[1] >= 0 ||
             animState.frameIdx > animState.anim.firstFrame + 2) {
