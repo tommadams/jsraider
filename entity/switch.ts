@@ -1,20 +1,25 @@
-import {Controller} from 'controllers/controller';
+import {AnimState} from 'animation';
+import {Component, EntityType} from 'entity/entity';
 import {Item, Scene, Trigger} from 'scene';
 
-export class Switch extends Controller {
+export class Switch extends Component {
   private timer = -1;
   private trigger: Trigger;
 
-  constructor(item: Item, scene: Scene) {
-    super(item, scene);
+  constructor(item: Item, private scene: Scene) {
+    super(item);
     this.trigger = this.item.getFloorSector().floorData.trigger;
   }
 
   activate() {
+    let state: number;
     if (this.item.animState.anim.state == Switch.State.DOWN) {
-      this.changeState(Switch.State.UP);
+      state = Switch.State.UP;
     } else {
-      this.changeState(Switch.State.DOWN);
+      state = Switch.State.DOWN;
+    }
+    if (this.item.animState.tryChangeState(state) != AnimState.StateChangeResult.OK) {
+      throw new Error(`Couldn't change ${EntityType[this.item.type]} state to ${state}`);
     }
     this.timer = this.trigger.timer || -1;
     return super.activate();

@@ -7,8 +7,8 @@ import {AnimState, AnimationId} from 'animation';
 import {Block} from 'controllers/block';
 import {Intersection, moveCharacter, resolveRoomByGrid, resolveRoomByPosition} from 'collision';
 import {Controller} from 'controllers/controller';
-import {Switch} from 'controllers/switch';
 import {ACTIVE, EntityType} from 'entity/entity';
+import {Switch} from 'entity/switch';
 import {Item, Room, Scene, Sector, Trigger} from 'scene';
 import {Input} from 'input';
 import {SlidingConstraints} from 'sliding_constraints';
@@ -161,14 +161,14 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[9];
     } else if (scene.name == 'LEVEL01.PHD') {
       // caves - bridge
-      vec3.setFromValues(item.position, 25122, 4352, 55814);
-      item.rotation[1] = Math.PI;
-      item.room = this.scene.rooms[13];
+      // vec3.setFromValues(item.position, 25122, 4352, 55814);
+      // item.rotation[1] = Math.PI;
+      // item.room = this.scene.rooms[13];
 
       // caves - switch
-      // vec3.setFromValues(item.position, 50831, 7680, 57704);
-      // item.rotation[1] = 1.5 * Math.PI;
-      // item.room = this.scene.rooms[9];
+      vec3.setFromValues(item.position, 50831, 7680, 57704);
+      item.rotation[1] = 1.5 * Math.PI;
+      item.room = this.scene.rooms[9];
 
       // caves - timed switch
       // vec3.setFromValues(item.position, 24447.9, 6912.0, 83495.9);

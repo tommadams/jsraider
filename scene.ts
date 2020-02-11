@@ -13,11 +13,11 @@ import {Stream} from 'toybox/util/stream';
 import {Block} from 'controllers/block';
 import {Controller} from 'controllers/controller';
 import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
-import {Switch} from 'controllers/switch';
 import {QuadBatch, TriBatch} from 'batch_builder';
-import {Component, EntityType} from 'entity/entity';
-import {Door} from 'entity/door';
 import {Bridge} from 'entity/bridge';
+import {Door} from 'entity/door';
+import {Component, EntityType} from 'entity/entity';
+import {Switch} from 'entity/switch';
 import * as hacks from 'hacks';
 import * as audio from 'audio';
 
@@ -2088,7 +2088,8 @@ export class Scene {
         controller = new Controller(item, this);
         item.components.push(new Door(item));
       } else if (item.isSwitch()) {
-        controller = new Switch(item, this);
+        controller = new Controller(item, this);
+        item.components.push(new Switch(item, this));
       } else if (item.isTrapDoor()) {
         controller = new Controller(item, this);
         item.components.push(new Door(item));

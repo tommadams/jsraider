@@ -50,7 +50,7 @@ export class Controller {
   }
 
   activate() {
-    console.log(`activate idx:${this.item.id} type:${EntityType[this.item.type]} mask:${this.item.activeMask.toString(16)}`);
+    // console.log(`activate idx:${this.item.id} type:${EntityType[this.item.type]} mask:${this.item.activeMask.toString(16)}`);
     this.item.visible = true;
     for (let component of this.item.components) {
       component.activate();
