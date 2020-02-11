@@ -104,6 +104,7 @@ export class Item {
   controller: Controller = null;
   reverse = false;
   visible = true;
+  activationLocked = false;
   components: Component[] = [];
 
   constructor(rooms: Room[], stream: Stream) {
@@ -495,7 +496,7 @@ export class Trigger {
 
   constructor(public type: number, bits: number) {
     this.timer = bits & 0xff;
-    this.oneShot = (bits & 0x8000) != 0;
+    this.oneShot = (bits & 0x0100) != 0;
     this.mask = (bits & 0x3e00) >> 9;
   }
 }
@@ -1545,17 +1546,25 @@ export class Scene {
           }
 
           let item = this.items[action.parameter];
-          // TODO(tom): oneShot handling
-          // TODO(tom): timer handling
+          let isLocked = item.isActive() && item.activationLocked;
 
           if (trigger.type == Trigger.Type.SWITCH) {
-            item.activeMask ^= trigger.mask;
-          } else if (trigger.type == Trigger.Type.TRIGGER_ON ||
-                     trigger.type == Trigger.Type.PAD_ON) {
-            item.activeMask |= trigger.mask;
+            if (!isLocked) {
+              item.activeMask ^= trigger.mask;
+            }
           } else if (trigger.type == Trigger.Type.TRIGGER_OFF ||
                      trigger.type == Trigger.Type.PAD_OFF) {
-            item.activeMask &= ~trigger.mask;
+            // TODO(tom): PAD_OFF needs to respect the oneShot trigger flag
+            // (see the switch & gorilla room at the start of St Francis' Folly)
+            // but what about TRIGGER_OFF?
+            if (!isLocked) {
+              item.activeMask &= ~trigger.mask;
+            }
+          } else {
+            item.activeMask |= trigger.mask;
+          }
+          if (trigger.oneShot && item.isActive()) {
+            item.activationLocked = true;
           }
           item.controller.activate();
           break;
