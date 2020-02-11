@@ -7,7 +7,6 @@ import {Item, Scene} from 'scene'
 import {resolveRoomByPosition} from 'collision'
 
 export class Controller {
-  private pendingState = -1;
   protected animStateCommand = new AnimState.Command();
 
   constructor(public item: Item, public scene: Scene) {
@@ -17,12 +16,10 @@ export class Controller {
   update(dt: number) {
     let item = this.item;
     let animState = item.animState;
-    let prevFrameIdx = animState.frameIdx;
-
-    if (this.pendingState != -1 &&
-        animState.tryChangeState(this.pendingState)) {
-      this.pendingState = -1;
+    if (animState == null) {
+      return;
     }
+    let prevFrameIdx = animState.frameIdx;
 
     // Advance the animation state.
     animState.advance(dt, this.animStateCommand);
@@ -53,25 +50,23 @@ export class Controller {
   }
 
   activate() {
-    if (this.item.active) { return false; }
-    this.item.active = true;
+    console.log(`activate idx:${this.item.id} type:${EntityType[this.item.type]} mask:${this.item.activeMask.toString(16)}`);
     this.item.visible = true;
-    for (let comp of this.item.components) {
-      comp.activate();
+    for (let component of this.item.components) {
+      component.activate();
     }
     return true;
   }
 
   deactivate() {
     // TODO(tom): maybe the active bit should live on the controller not the item.
-    this.item.active = false;
     for (let comp of this.item.components) {
       comp.deactivate();
     }
   }
 
   changeState(state: number) {
-    if (!this.item.animState.tryChangeState(state)) {
+    if (this.item.animState.tryChangeState(state) != AnimState.StateChangeResult.OK) {
       throw new Error(`Couldn't change ${EntityType[this.item.type]} state to ${state}`);
     }
   }
@@ -94,7 +89,7 @@ export class Controller {
       `i:${i} j:${j}`,
       `position:[${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}]`,
       `rotation:[${rot[0].toFixed(2)}, ${rot[1].toFixed(2)}, ${rot[2].toFixed(2)}]`,
-      `active:${item.active} activeMask:0x${item.activeMask.toString(16)}`,
+      `activeMask:0x${item.activeMask.toString(16)}`,
     ];
 
     if (animState != null) {

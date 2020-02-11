@@ -12,12 +12,11 @@ import {Stream} from 'toybox/util/stream';
 
 import {Block} from 'controllers/block';
 import {Controller} from 'controllers/controller';
-import {Door} from 'controllers/door';
 import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
 import {Switch} from 'controllers/switch';
-import {TrapDoor} from 'controllers/trap_door';
 import {QuadBatch, TriBatch} from 'batch_builder';
 import {Component, EntityType} from 'entity/entity';
+import {Door} from 'entity/door';
 import {Bridge} from 'entity/bridge';
 import * as hacks from 'hacks';
 import * as audio from 'audio';
@@ -91,6 +90,7 @@ export class SceneCamera {
 }
 
 export class Item {
+  id = -1;
   type: number;
   position: vec3.Type;
   rawRotation: number;
@@ -102,7 +102,6 @@ export class Item {
   spriteSequence: SpriteSequence = null;
   room: Room;
   controller: Controller = null;
-  active = false;
   reverse = false;
   visible = true;
   components: Component[] = [];
@@ -130,7 +129,8 @@ export class Item {
     this.room = rooms[roomIdx];
   }
 
-  init(scene: Scene) {
+  init(id: number, scene: Scene) {
+    this.id = id;
     this.moveable = scene.moveables.find(a => a.type == this.type) || null;
     if (this.moveable != null) {
       this.animState = new AnimState(
@@ -170,6 +170,26 @@ export class Item {
 
   getSector() {
     return this.room.getSectorByPosition(this.position);
+  }
+
+  getCeilingSector() {
+    let sector = this.room.getSectorByPosition(this.position);
+    while (sector.roomAbove != null) {
+      sector = sector.roomAbove.getSectorByGrid(sector.i, sector.j);
+    }
+    return sector;
+  }
+
+  getFloorSector() {
+    let sector = this.room.getSectorByPosition(this.position);
+    while (sector.roomBelow != null) {
+      sector = sector.roomBelow.getSectorByGrid(sector.i, sector.j);
+    }
+    return sector;
+  }
+
+  isActive() {
+    return (this.activeMask == ACTIVE) != this.reverse;
   }
 
   // TODO(tom): make a controller type lookup table.
@@ -756,7 +776,7 @@ export class Sector {
         bridgeY -= slope[1] * v;
       }
 
-      if (pos[1] - 256 <= bridgeY) {
+      if (pos[1] - 128 <= bridgeY) {
         y = Math.min(y, bridgeY);
       }
     }
@@ -809,7 +829,7 @@ export class Sector {
         bridgeY -= slope[1] * v;
       }
 
-      if (pos[1] - 256 > bridgeY) {
+      if (pos[1] - 128 > bridgeY) {
         y = Math.max(y, bridgeY);
       }
     }
@@ -1453,8 +1473,8 @@ export class Scene {
       this.animations[i].init(
           i, this.animations, this.stateChanges, this.animCommands, this.frames);
     }
-    for (let item of this.items) {
-      item.init(this);
+    for (let i = 0; i < this.items.length; ++i) {
+      this.items[i].init(i, this);
     }
     for (let moveable of this.moveables) {
       moveable.init(this);
@@ -2056,11 +2076,13 @@ export class Scene {
         controller = new Controller(item, this);
         item.components.push(new Bridge(item));
       } else if (item.isDoor()) {
-        controller = new Door(item, this);
+        controller = new Controller(item, this);
+        item.components.push(new Door(item));
       } else if (item.isSwitch()) {
         controller = new Switch(item, this);
       } else if (item.isTrapDoor()) {
-        controller = new TrapDoor(item, this);
+        controller = new Controller(item, this);
+        item.components.push(new Door(item));
         item.components.push(new Bridge(item));
       } else {
         controller = new Controller(item, this);
@@ -2069,6 +2091,7 @@ export class Scene {
 
       if (item.activeMask == ACTIVE) {
         item.controller.activate();
+        item.activeMask = 0;
         item.reverse = true;
       }
     }
@@ -2080,26 +2103,9 @@ export class Scene {
     // Activate bridge components.
     // These need to be activated before Lara stands on the trigger otherwise
     // she won't be able to walk on them.
-    for (let room of this.rooms) {
-      for (let sector of room.sectorTable) {
-        let trigger = sector.floorData.trigger;
-        if (trigger == null || trigger.type != Trigger.Type.TRIGGER_ON) {
-          continue;
-        }
-
-        for (let action of trigger.actions) {
-          if (action.type != Trigger.Action.Type.ACTIVATE) {
-            continue;
-          }
-          let item = this.items[action.parameter];
-          if (item.isBridge() || item.isTrapDoor()) {
-            let bridge = item.getComponent(Bridge);
-            console.log(`activating bridge ${action.parameter} ${room.id} ${room.sectorTable.indexOf(sector)}`);
-            if (bridge != null) {
-              bridge.activate();
-            }
-          }
-        }
+    for (let item of this.items) {
+      if (item.isBridge() || item.isTrapDoor() || item.isDoor()) {
+        item.controller.activate();
       }
     }
   }

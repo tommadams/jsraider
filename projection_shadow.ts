@@ -115,6 +115,8 @@ export class ProjectionShadow {
       return;
     }
 
+    // TODO(tom): This method of getting the floor geometry doesn't handle portal
+    // sectors properly, so it won't work for large objects like the T-Rex.
     this.vertices.clear();
     for (let j = sj; j <= ej; ++j) {
       for (let i = si; i <= ei; ++i) {

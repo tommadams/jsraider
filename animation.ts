@@ -87,6 +87,14 @@ export class AnimDispatch {
   }
 }
 
+export namespace AnimState {
+  export const enum StateChangeResult {
+    MISSING_TARGET_STATE,
+    CANT_CHANGE_YET,
+    OK,
+  }
+}
+
 // TODO(tom): AnimState should contain explicit data about the current
 // animation & frame, and the next animation & frame, so flip blending and
 // other stuff can be done.
@@ -153,29 +161,24 @@ export class AnimState {
     return false;
   }
 
-  /**
-   * @param {number} targetState
-   * @return {boolean} True if the animation has a transition to the target
-   *     state. This does NOT mean that the transition took place.
-   */
   tryChangeState(targetState: number) {
-    let hasState = false;
+    let result = AnimState.StateChangeResult.MISSING_TARGET_STATE;
     for (let stateChange of this.anim.stateChanges) {
       if (stateChange.state != targetState) {
         continue;
       }
-      hasState = true;
+      result = AnimState.StateChangeResult.CANT_CHANGE_YET;
       for (let dispatch of stateChange.animDispatches) {
         //console.log(dispatch.low, this.frameIdx, dispatch.high);
         if (this.frameIdx + 0.5 + this.frameOfs >= dispatch.low &&
             this.frameIdx + 0.5 + this.frameOfs <= dispatch.high) {
           this.setAnim(
               this.animations_[dispatch.nextAnimId], dispatch.nextFrame);
-          return hasState;
+          return AnimState.StateChangeResult.OK;
         }
       }
     }
-    return hasState;
+    return result;
   }
 
   toString() {
@@ -249,13 +252,11 @@ export class AnimState {
       command.clear();
     }
 
-    // Round the elapsed time up to the nearest millisecond.
-    // This is an attempt to minimise possible jitter when two 60Hz frames
-    // don't quite add get the frameOfs up to 1.
-    dt = Math.ceil(dt * 1000) / 1000;
+    // Round the frame rate to an integer multiple 30Hz.
+    let numSubFrames = Math.round(1 / (30 * dt));
 
     // TODO(tom): Define a global FPS constant.
-    this.frameOfs += dt * 30;
+    this.frameOfs += 1 / numSubFrames;
     if (this.frameOfs < 1) {
       return;
     }

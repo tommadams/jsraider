@@ -1,10 +1,10 @@
-import {Controller} from 'controllers/controller';
-import {Item, Scene} from 'scene';
+import {Component, EntityType} from 'entity/entity';
+import {Item, Scene, Sector} from 'scene';
 
-export class Door extends Controller {
+export class Door extends Component {
   update(dt: number) {
     super.update(dt);
-    let targetState = this.item.activeMask == 0x1f ? Door.State.OPEN : Door.State.CLOSED;
+    let targetState = this.item.isActive() ? Door.State.OPEN : Door.State.CLOSED;
     if (targetState != this.item.animState.anim.state) {
       this.item.animState.tryChangeState(targetState);
     }
@@ -17,3 +17,4 @@ export namespace Door {
     OPEN,
   }
 }
+

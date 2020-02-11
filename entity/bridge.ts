@@ -1,6 +1,6 @@
 import * as vec2 from 'toybox/math/vec2';
 
-import {Door} from 'controllers/door';
+import {Door} from 'entity/door';
 import {Component, EntityType} from 'entity/entity';
 import {Item, Scene, Sector} from 'scene';
 
@@ -36,8 +36,9 @@ export class Bridge extends Component {
     let door = this.item.getComponent(Door);
     let activate = (door == null ||
                     door.item.animState.anim.state == Door.State.CLOSED);
-    let floorData = this.item.getSector().getResolvedFloorSector().floorData;
-    if (door == null || door.item.animState.anim.state == Door.State.CLOSED) {
+
+    let floorData = this.item.getFloorSector().floorData;
+    if (door == null || !door.item.isActive()) {
       floorData.bridge = this;
     } else {
       floorData.bridge = null;

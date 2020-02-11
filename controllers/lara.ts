@@ -3,12 +3,12 @@ import * as vec3 from 'toybox/math/vec3';
 
 import * as audio from 'audio';
 
-import {AnimationId} from 'animation';
+import {AnimState, AnimationId} from 'animation';
 import {Block} from 'controllers/block';
 import {Intersection, moveCharacter, resolveRoomByGrid, resolveRoomByPosition} from 'collision';
 import {Controller} from 'controllers/controller';
 import {Switch} from 'controllers/switch';
-import {EntityType} from 'entity/entity';
+import {ACTIVE, EntityType} from 'entity/entity';
 import {Item, Room, Scene, Sector, Trigger} from 'scene';
 import {Input} from 'input';
 import {SlidingConstraints} from 'sliding_constraints';
@@ -185,6 +185,11 @@ export class Lara extends Controller {
       item.rotation[1] = -0.5 * Math.PI;
       item.room = this.scene.rooms[26];
 
+      // vilcabamba - trap door
+      // vec3.setFromValues(item.position, 20608, -768, 30173);
+      // item.rotation[1] = -0.5 * Math.PI;
+      // item.room = this.scene.rooms[61];
+
       // vilcabamba - sprites
       // vec3.setFromValues(item.position, 72315, 0, 24906);
       // item.rotation[1] = 2.7925;
@@ -217,9 +222,9 @@ export class Lara extends Controller {
 
       // lost valley - jump forwards onto slope gets lara stuck in fall state
       // because of floating point precision.
-      vec3.setFromValues(item.position, 59683.7, 3584.0, 5786.6);
-      item.rotation[1] = 2.76;
-      item.room = this.scene.rooms[61];
+      // vec3.setFromValues(item.position, 59683.7, 3584.0, 5786.6);
+      // item.rotation[1] = 2.76;
+      // item.room = this.scene.rooms[61];
 
       // lost valley - buried bridge pieces
       // vec3.setFromValues(item.position, 39351, 3584, 23691);
@@ -227,16 +232,12 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[56];
     } else if (scene.name == 'LEVEL04.PHD') {
       // st francis' folly - block
-      // item.position[0] = 31217;
-      // item.position[1] = 256;
-      // item.position[2] = 36339;
-      // item.rotation[1] = 0.5 * Math.PI;
-      // item.room = this.scene.rooms[0];
+      vec3.setFromValues(item.position, 31217, 256, 36339);
+      item.rotation[1] = 0.5 * Math.PI;
+      item.room = this.scene.rooms[0];
 
       // st francis' folly - item
-      // item.position[0] = 34104;
-      // item.position[1] = -3840;
-      // item.position[2] = 40127;
+      // vec3.setFromValues(34104, -3840, 40127);
       // item.rotation[1] = 0.1571;
       // item.room = this.scene.rooms[1];
 
@@ -283,7 +284,7 @@ export class Lara extends Controller {
 
     this.sector = this.item.room.getSectorByPosition(this.item.position);
 
-    this.item.active = true;
+    this.item.activeMask = ACTIVE;
   }
 
   getBoneTransform(bone: LaraBone) {
@@ -1074,15 +1075,8 @@ export class Lara extends Controller {
       }
     }
   
-    if (forward) {
-      // Check that there's enough space to climb up. Check both the current
-      // ceiling and the next one to avoid Lara bumping her head on the way up.
-      let hangCeiling = Math.max(
-          currHangSector.getCeilingAt(this.item.position),
-          this.sector.getCeilingAt(this.item.position));
-      if (hangCeiling - hangFloor < -this.height) {
-        return walk ? State.HANDSTAND : State.HANG_UP;
-      }
+    if (forward && this.canClimbUp(currHangSector)) {
+      return walk ? State.HANDSTAND : State.HANG_UP;
     }
     if (left && canShimmy) { return State.SHIMMY_LEFT; }
     if (right && canShimmy) { return State.SHIMMY_RIGHT; }
@@ -1196,6 +1190,17 @@ export class Lara extends Controller {
     return State.SWIM_INERTIA;
   }
 
+  private canClimbUp(targetSector: Sector) {
+    // Check that there's enough space to climb up. Check both the current
+    // sector's ceiling and the next one to avoid Lara bumping her head on
+    // the way up.
+    let targetFloor = targetSector.getFloorAt(this.item.position);
+    let currentCeiling = this.sector.getCeilingAt(this.item.position);
+    let targetCeiling = targetSector.getCeilingAt(this.item.position);
+    let maxCeiling = Math.max(currentCeiling, targetCeiling);
+    return maxCeiling - targetFloor <= -this.height;
+  }
+
   private getStateTreadWater() {
     // Handle transition from swim.
     if (this.state == State.SWIM ||
@@ -1212,16 +1217,17 @@ export class Lara extends Controller {
       this.item.position[1] = this.sector.floor - 32;
     }
   
-    if (this.grabSector != null &&
-        this.input.forward && this.input.action) {
-      let anim = this.scene.animations[AnimationId.LEAVE_WATER];
-      this.alignToAxis();
-      this.item.animState.setAnim(anim, anim.firstFrame);
-      this.grabSector.getNearestFloorPosition(
-          this.item.position, this.item.position);
-      this.item.position[0] += 0.75 * this.radius * this.di;
-      this.item.position[2] += 0.75 * this.radius * this.dj;
-      return State.WATER_OUT;
+    if (this.grabSector != null && this.input.forward && this.input.action) {
+      if (this.canClimbUp(this.grabSector)) {
+        let anim = this.scene.animations[AnimationId.LEAVE_WATER];
+        this.alignToAxis();
+        this.item.animState.setAnim(anim, anim.firstFrame);
+        this.grabSector.getNearestFloorPosition(
+            this.item.position, this.item.position);
+        this.item.position[0] += 0.75 * this.radius * this.di;
+        this.item.position[2] += 0.75 * this.radius * this.dj;
+        return State.WATER_OUT;
+      }
     }
   
     if (this.input.forward) { return State.TREAD_WATER_FORWARD; }
@@ -1261,7 +1267,8 @@ export class Lara extends Controller {
     // Try and change Lara's state.
     let targetState = this.getStateFuncs[this.locomotionType]();
     if (targetState != this.item.animState.anim.state) {
-      if (!this.item.animState.tryChangeState(targetState)) {
+      if (this.item.animState.tryChangeState(targetState) ==
+          AnimState.StateChangeResult.MISSING_TARGET_STATE) {
         let defaultState = this.getStateDefault();
         if (defaultState != this.state && defaultState != targetState) {
           console.log(
@@ -1702,6 +1709,7 @@ export class Lara extends Controller {
         actionStart = 1;
         let switchItem = this.scene.items[trigger.actions[0].parameter];
         let laraState, switchState: number;
+        let activeMask: number;
         if (switchItem.animState.anim.state == Switch.State.DOWN) {
           switchState = Switch.State.UP;
           // Like normal switches, underwater switches have both an "up" and
@@ -1712,13 +1720,16 @@ export class Lara extends Controller {
           } else {
             laraState = State.SWITCH_DOWN;
           }
+          activeMask = ACTIVE;
         } else {
           switchState = Switch.State.DOWN;
           laraState = State.SWITCH_DOWN;
+          activeMask = 0;
         }
         if (switchItem.animState.canChangeState(switchState) &&
-            this.item.animState.tryChangeState(laraState)) {
+            this.item.animState.tryChangeState(laraState) == AnimState.StateChangeResult.OK) {
           this.alignToAxis();
+          switchItem.activeMask = activeMask;
           switchItem.controller.activate();
         }
         // We don't run actions for the switch here. Instead, actions are run

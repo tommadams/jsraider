@@ -16,9 +16,6 @@ import {FlyCamera} from 'fly_camera';
 import {Renderer} from 'renderer';
 import {Scene} from 'scene';
 
-
-///  console.log('Offset objects depth a little to prevent z-fighting on some objects');
-
 class JsRaiderApp extends app.App {
   private level: string;
   private paused = false;
@@ -102,7 +99,7 @@ class JsRaiderApp extends app.App {
     let dt = 1 / 60;
     let dtCamera = dt;
     if (debug.options.slowMotion) {
-      dt /= 5;
+      dt /= 4;
     }
 
     this.time += dt * 1000;
@@ -129,8 +126,11 @@ class JsRaiderApp extends app.App {
     if (!this.paused) {
       // TODO(tom): maintain a list of active controllers
       for (let controller of this.scene.controllers) {
-        if (controller != null && controller.item.active) {
+        if (controller != null) {
           controller.update(dt);
+          for (let component of controller.item.components) {
+            component.update(dt);
+          }
         }
       }
     }

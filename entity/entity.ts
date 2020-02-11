@@ -1,7 +1,10 @@
 import {Item} from 'scene';
 
+export const ACTIVE = 0x1f;
+
 export class Component {
   constructor(public item: Item) {}
+  update(dt: number) {}
   activate() {}
   deactivate() {}
 }
