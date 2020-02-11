@@ -278,18 +278,6 @@ class JsRaiderApp extends app.App {
   }
 }
 
-// TODO(tom): Move this into toybox.
-interface UriArgs {
-  [key: string]: any;
-}
-let args: UriArgs = {};
-
-for (let arg of window.location.search.substring(1).split('&')) {
-  let p = arg.split('=');
-  let name = decodeURIComponent(p[0]);
-  let value = p.length == 1 ? '' : decodeURIComponent(p[1]);
-  args[name] = value;
-}
-
 // Make the app accessible from the console for debugging purposes.
-(window as any).app = new JsRaiderApp(args.level);
+let params = new URLSearchParams(window.location.search);
+(window as any).app = new JsRaiderApp(params.get('level'));
