@@ -63,7 +63,7 @@ export class CinematicFrame {
   posZ: number;
   posY: number;
   posX: number;
-  unknown: number;
+  fov: number;
   rotX: number;
 
   constructor(stream: Stream) {
@@ -73,7 +73,7 @@ export class CinematicFrame {
     this.posZ = stream.readInt16();
     this.posY = stream.readInt16();
     this.posX = stream.readInt16();
-    this.unknown = stream.readInt16();
+    this.fov = stream.readInt16();
     this.rotX = stream.readInt16();
   }
 }
@@ -233,6 +233,10 @@ export class Item {
         return true;
     }
     return false;
+  }
+
+  isSaveCrystal() {
+    return this.type == EntityType.SAVE_CRYSTAL;
   }
 
   isSwitch() {
@@ -2080,6 +2084,7 @@ export class Scene {
         this.lara = new Lara(item, this);
         controller = this.lara;
       } else if (item.isBlock()) {
+        // TODO(tom): make Block a component.
         controller = new Block(item, this);
       } else if (item.isBridge()) {
         controller = new Controller(item, this);

@@ -28,7 +28,7 @@ export class Block extends Controller {
 
     // Reset the floor height when the block is pushed or pull.
     // We do this immediately the block gets pushed as kind of a hack: projection
-    // shadows project onto collision generated from the floor data. Reseting
+    // shadows project onto collision generated from the floor data. Resetting
     // the floor height at the start ensures that Lara's shadow gets correctly
     // projected onto the ground under the block during a push.
     if (state == Block.State.PUSH || state == Block.State.PULL) {

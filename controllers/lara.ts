@@ -166,9 +166,9 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[13];
 
       // caves - switch
-      vec3.setFromValues(item.position, 50831, 7680, 57704);
-      item.rotation[1] = 1.5 * Math.PI;
-      item.room = this.scene.rooms[9];
+      // vec3.setFromValues(item.position, 50831, 7680, 57704);
+      // item.rotation[1] = 1.5 * Math.PI;
+      // item.room = this.scene.rooms[9];
 
       // caves - timed switch
       // vec3.setFromValues(item.position, 24447.9, 6912.0, 83495.9);
@@ -179,6 +179,11 @@ export class Lara extends Controller {
       // vec3.setFromValues(item.position, 66142, -2910, 52184);
       // item.rotation[1] = -0.4 * Math.PI;
       // item.room = this.scene.rooms[28];
+
+      // caves - save crystal
+      vec3.setFromValues(item.position, 8537, 3840, 68405);
+      item.rotation[1] = Math.PI;
+      item.room = this.scene.rooms[20];
     } else if (scene.name == 'LEVEL02.PHD') {
       // vilcabamba - underwater switch
       vec3.setFromValues(item.position, 71808, 1702, 18992);
@@ -232,19 +237,24 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[56];
     } else if (scene.name == 'LEVEL04.PHD') {
       // st francis' folly - block
-      vec3.setFromValues(item.position, 31217, 256, 36339);
-      item.rotation[1] = 0.5 * Math.PI;
-      item.room = this.scene.rooms[0];
+      // vec3.setFromValues(item.position, 31217, 256, 36339);
+      // item.rotation[1] = 0.5 * Math.PI;
+      // item.room = this.scene.rooms[0];
 
       // st francis' folly - item
       // vec3.setFromValues(34104, -3840, 40127);
       // item.rotation[1] = 0.1571;
       // item.room = this.scene.rooms[1];
 
-      // st francis' folly - item
+      // st francis' folly - room switch
       // vec3.setFromValues(item.position, 43136, 10752, 34307);
       // item.rotation[1] = 1.5 * Math.PI;
       // item.room = this.scene.rooms[13];
+
+      // st francis' folly - save crystal
+      vec3.setFromValues(item.position, 35014, 11008, 41644);
+      item.rotation[1] = 0.5 * Math.PI;
+      item.room = this.scene.rooms[18];
     } else if (scene.name == 'LEVEL05.PHD') {
       // colosseum
       // item.position[0] = 81537;

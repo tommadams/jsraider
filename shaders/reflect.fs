@@ -1,0 +1,20 @@
+#include "shaders/fog.inc"
+#include "shaders/tonemap.inc"
+
+uniform sampler2D tex;
+
+in vec3 v_color;
+in vec3 v_normal;
+
+out vec4 o_color;
+
+void main(void) {
+  vec3 normal = normalize(v_normal);
+  vec2 uv = vec2(-0.5, 0.5) * normal.xy + 0.5;
+  o_color.xyz = v_color * texture(tex, uv).xyz;
+  o_color.xyz = applyFog(o_color.xyz);
+  o_color.xyz = tonemap(o_color.xyz);
+  o_color.w = 1.0;
+}
+
+
