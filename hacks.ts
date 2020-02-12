@@ -20,74 +20,7 @@ function maybeSwapLara_(levelName: string, scene: Scene) {
 }
 
 export function applyPostLoadHacks(levelName: string, scene: Scene) {
-  // The TR1 save crystal mesh is only made up of six triangles and their
-  // vertices have smoothed normals, which looks pretty bad.
-  // Calculate nicer normals.
-  for (let moveable of scene.moveables) {
-    if (moveable.type != EntityType.SAVE_CRYSTAL) { continue; }
-    for (let i = 0; i < moveable.meshCount; ++i) {
-      let mesh = scene.meshes[moveable.firstMesh + i];
-      if (mesh.coloredTris.length == 0) {
-        throw new Error('expected colored tris for save crystal');
-      }
-      let ps: vec3.Type[] = [];
-      let ns: vec3.Type[] = [];
-      let pab = vec3.newZero();
-      let pac = vec3.newZero();
-      for (let i = 0; i < mesh.coloredTris.length; i += 4) {
-        let a = mesh.coloredTris[i] * 3;
-        let b = mesh.coloredTris[i + 1] * 3;
-        let c = mesh.coloredTris[i + 2] * 3;
-
-        // Get the vertex positions.
-        let pa = vec3.newFromValues(mesh.vertices[a], mesh.vertices[a + 1], mesh.vertices[a + 2]);
-        let pb = vec3.newFromValues(mesh.vertices[b], mesh.vertices[b + 1], mesh.vertices[b + 2]);
-        let pc = vec3.newFromValues(mesh.vertices[c], mesh.vertices[c + 1], mesh.vertices[c + 2]);
-
-        // Get the vertex normals.
-        let na = vec3.newFromValues(mesh.normals[a], mesh.normals[a + 1], mesh.normals[a + 2]);
-        let nb = vec3.newFromValues(mesh.normals[b], mesh.normals[b + 1], mesh.normals[b + 2]);
-        let nc = vec3.newFromValues(mesh.normals[c], mesh.normals[c + 1], mesh.normals[c + 2]);
-        vec3.normalize(na, na);
-        vec3.normalize(nb, nb);
-        vec3.normalize(nc, nc);
-
-        // Calculate the face normal.
-        vec3.sub(pab, pb, pa);
-        vec3.sub(pac, pc, pa);
-        let nf = vec3.cross(vec3.newZero(), pac, pab);
-        vec3.normalize(nf, nf);
-
-        // Calculate new vertex normals.
-        vec3.normalize(na, vec3.add(na, na, nf));
-        vec3.normalize(nb, vec3.add(nb, nb, nf));
-        vec3.normalize(nc, vec3.add(nc, nc, nf));
-
-        ps.push(pa, pb, pc);
-        ns.push(na, nb, nc);
-      }
-
-      // Fix up the mesh data.
-      let vertices = new Int16Array(ps.length * 3);
-      let normals = new Int16Array(ns.length * 3);
-      let coloredTris = new Uint16Array(ps.length * 4);
-      for (let i = 0; i < ps.length; ++i) {
-        vertices[i * 3    ] = ps[i][0];
-        vertices[i * 3 + 1] = ps[i][1];
-        vertices[i * 3 + 2] = ps[i][2];
-        normals[i * 3    ] = 16383 * ns[i][0];
-        normals[i * 3 + 1] = 16383 * ns[i][1];
-        normals[i * 3 + 2] = 16383 * ns[i][2];
-        coloredTris[i * 4    ] = i * 3;
-        coloredTris[i * 4 + 1] = i * 3 + 1;
-        coloredTris[i * 4 + 2] = i * 3 + 2;
-        coloredTris[i * 4 + 3] = mesh.coloredTris[i * 4 + 3];
-      }
-      mesh.vertices = vertices;
-      mesh.normals = normals;
-      mesh.coloredTris = coloredTris;
-    }
-  }
+  fixSaveCrystalNormals(scene);
 
   switch (levelName) {
     case 'LEVLE02.PHD':
@@ -156,3 +89,76 @@ export function applyPostInitHacks(levelName: string, scene: Scene) {
       break;
   }
 }
+
+// The TR1 save crystal mesh is only made up of six triangles and their
+// vertices have smoothed normals, which looks pretty bad.
+// Calculate nicer normals for the mesh.
+function fixSaveCrystalNormals(scene: Scene) {
+  for (let moveable of scene.moveables) {
+    if (moveable.type != EntityType.SAVE_CRYSTAL) { continue; }
+    for (let i = 0; i < moveable.meshCount; ++i) {
+      let mesh = scene.meshes[moveable.firstMesh + i];
+      if (mesh.coloredTris.length == 0) {
+        throw new Error('expected colored tris for save crystal');
+      }
+      let ps: vec3.Type[] = [];
+      let ns: vec3.Type[] = [];
+      let pab = vec3.newZero();
+      let pac = vec3.newZero();
+      for (let i = 0; i < mesh.coloredTris.length; i += 4) {
+        let a = mesh.coloredTris[i] * 3;
+        let b = mesh.coloredTris[i + 1] * 3;
+        let c = mesh.coloredTris[i + 2] * 3;
+
+        // Get the vertex positions.
+        let pa = vec3.newFromValues(mesh.vertices[a], mesh.vertices[a + 1], mesh.vertices[a + 2]);
+        let pb = vec3.newFromValues(mesh.vertices[b], mesh.vertices[b + 1], mesh.vertices[b + 2]);
+        let pc = vec3.newFromValues(mesh.vertices[c], mesh.vertices[c + 1], mesh.vertices[c + 2]);
+
+        // Get the vertex normals.
+        let na = vec3.newFromValues(mesh.normals[a], mesh.normals[a + 1], mesh.normals[a + 2]);
+        let nb = vec3.newFromValues(mesh.normals[b], mesh.normals[b + 1], mesh.normals[b + 2]);
+        let nc = vec3.newFromValues(mesh.normals[c], mesh.normals[c + 1], mesh.normals[c + 2]);
+        vec3.normalize(na, na);
+        vec3.normalize(nb, nb);
+        vec3.normalize(nc, nc);
+
+        // Calculate the face normal.
+        vec3.sub(pab, pb, pa);
+        vec3.sub(pac, pc, pa);
+        let nf = vec3.cross(vec3.newZero(), pac, pab);
+        vec3.normalize(nf, nf);
+
+        // Calculate new vertex normals.
+        vec3.normalize(na, vec3.add(na, na, nf));
+        vec3.normalize(nb, vec3.add(nb, nb, nf));
+        vec3.normalize(nc, vec3.add(nc, nc, nf));
+
+        ps.push(pa, pb, pc);
+        ns.push(na, nb, nc);
+      }
+
+      // Fix up the mesh data.
+      let vertices = new Int16Array(ps.length * 3);
+      let normals = new Int16Array(ns.length * 3);
+      let coloredTris = new Uint16Array(ps.length * 4);
+      for (let i = 0; i < ps.length; ++i) {
+        vertices[i * 3    ] = ps[i][0];
+        vertices[i * 3 + 1] = ps[i][1];
+        vertices[i * 3 + 2] = ps[i][2];
+        normals[i * 3    ] = 16383 * ns[i][0];
+        normals[i * 3 + 1] = 16383 * ns[i][1];
+        normals[i * 3 + 2] = 16383 * ns[i][2];
+        coloredTris[i * 4    ] = i * 3;
+        coloredTris[i * 4 + 1] = i * 3 + 1;
+        coloredTris[i * 4 + 2] = i * 3 + 2;
+        coloredTris[i * 4 + 3] = mesh.coloredTris[i * 4 + 3];
+      }
+      mesh.vertices = vertices;
+      mesh.normals = normals;
+      mesh.coloredTris = coloredTris;
+    }
+  }
+
+}
+

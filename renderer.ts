@@ -5,6 +5,7 @@ import * as vec4 from 'toybox/math/vec4';
 
 import {GL, TextureMinFilter} from 'toybox/gl/constants';
 import {Context} from 'toybox/gl/context';
+import {DynamicCubeMap} from 'toybox/gl/dynamic_cube_map';
 import {DynamicDraw} from 'toybox/gl/dynamic_draw';
 import {Framebuffer} from 'toybox/gl/framebuffer';
 import {ShaderProgram} from 'toybox/gl/shader';
@@ -77,6 +78,8 @@ export class Renderer {
 
   private reflectFb: Framebuffer;
 
+  private cubeMap: DynamicCubeMap;
+
   constructor(ctx: Context, scene: Scene, lara: Lara) {
     this.ctx = ctx;
     this.scene_ = scene;
@@ -115,6 +118,12 @@ export class Renderer {
     this.reflectFb = ctx.newFramebuffer(
         {size: 256, format: GL.RGBA8, filter: GL.LINEAR},
         {size: 256, format: GL.DEPTH_COMPONENT16});
+
+    this.cubeMap = new DynamicCubeMap(
+        this.ctx,
+        {size: 256, format: GL.RGBA8, filter: GL.LINEAR},
+        {size: 256, format: GL.DEPTH_COMPONENT16},
+        8, 102400);
 
     this.shaders = {
       causticsQuad: ctx.newShaderProgram('shaders/caustics_quad.vs', 
@@ -185,7 +194,38 @@ export class Renderer {
       //     0, ctx.canvas.height - 2 * reflectView.fb.height,
       //     2 * reflectView.fb.width, 2 * reflectView.fb.height);
     }
-  
+
+    // CUBE MAP
+    // CUBE MAP
+    // CUBE MAP
+    // CUBE MAP
+    let origin = mat4.getTranslation(vec3.newZero(), cameraTransform);
+    this.cubeMap.setOrigin(origin);
+    for (let face of this.cubeMap.faces) {
+      let view = new RenderView(`cube[${face.name}]`);
+      view.fb = face.fb;
+      mat4.setFromMat(view.view, face.view);
+      mat4.setFromMat(view.proj, this.cubeMap.proj);
+      mat4.setFromMat(view.viewProj, face.viewProj);
+      vec3.setFromVec(view.eyePos, origin);
+
+      view.visibleRooms = this.culler_.cull(room, view.view, view.proj);
+      this.drawRenderView(view);
+    }
+    ctx.bindFramebuffer(null);
+    let x = 0;
+    for (let face of this.cubeMap.faces) {
+      debug.draw.blitRgb(
+          face.fb.color[0],
+          x, ctx.canvas.height - this.cubeMap.size,
+          this.cubeMap.size, this.cubeMap.size);
+      x += this.cubeMap.size;
+    }
+    // CUBE MAP
+    // CUBE MAP
+    // CUBE MAP
+    // CUBE MAP
+
     ctx.profile('shadow', () => {
       this.shadow.draw(mainView.viewProj);
     });
@@ -438,7 +478,7 @@ export class Renderer {
     // Draw save crystals if any.
     ctx.useProgram(this.shaders.reflect);
     ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
-    ctx.setUniform('tint', 0.5, 0.5, 2.0);
+    ctx.setUniform('tint', 0.3, 0.3, 2.0);
     ctx.bindTexture('tex', this.reflectFb.color[0]);
     for (let item of visibleRoom.moveables) {
       if (!item.isSaveCrystal()) { continue; }

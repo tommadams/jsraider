@@ -12,6 +12,11 @@ void main(void) {
   vec3 normal = normalize(v_normal);
   vec2 uv = vec2(-0.5, 0.5) * normal.xy + 0.5;
   o_color.xyz = v_color * texture(tex, uv).xyz;
+
+  // Add a cheap Fresnel reflection effect.
+  float fresnel = 1.0 - max(normal.z, 0.0);
+  o_color.xyz += 0.2 * fresnel * fresnel;
+
   o_color.xyz = applyFog(o_color.xyz);
   o_color.xyz = tonemap(o_color.xyz);
   o_color.w = 1.0;
