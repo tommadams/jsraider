@@ -1618,7 +1618,7 @@ export class Lara extends Controller {
     if (trigger != null) {
       lines.push(`TRIGGER type:${Trigger.Type[trigger.type]} ` +
                  `timer:${trigger.timer} ` +
-                 `mask:0x${trigger.mask.toString(16)} ` +
+                 `mask:${trigger.mask.toString(2).padStart(5, '0')} ` +
                  `oneShot:${trigger.oneShot}`);
 
       for (let action of trigger.actions) {
@@ -1635,7 +1635,8 @@ export class Lara extends Controller {
             } else {
               line += ` out of range (${this.scene.items.length})`;
             }
-            line += ` mask:0x${this.scene.items[action.parameter].activeMask.toString(16)}`;
+            let mask = this.scene.items[action.parameter].activeMask;
+            line += ` mask:${mask.toString(2).padStart(5, '0')}`;
             break;
 
           case Trigger.Action.Type.PLAY_MUSIC:

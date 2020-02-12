@@ -89,7 +89,7 @@ export class Controller {
       `i:${i} j:${j}`,
       `position:[${pos[0].toFixed(1)}, ${pos[1].toFixed(1)}, ${pos[2].toFixed(1)}]`,
       `rotation:[${rot[0].toFixed(2)}, ${rot[1].toFixed(2)}, ${rot[2].toFixed(2)}]`,
-      `activeMask:0x${item.activeMask.toString(16)}`,
+      `activeMask:${item.activeMask.toString(2).padStart(5, '0')}`,
     ];
 
     if (animState != null) {
