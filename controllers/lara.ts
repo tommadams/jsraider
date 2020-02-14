@@ -73,8 +73,9 @@ export class CharacterCollision {
 
 export class Lara extends Controller {
   locomotionType = LocomotionType.GROUND;
+  sector: Sector = null;
+
   private input = new Input();
-  private sector: Sector = null;
   private prevSector: Sector = null;
   private radius = 128;
   private height = 768;
@@ -186,9 +187,9 @@ export class Lara extends Controller {
       item.room = this.scene.rooms[20];
     } else if (scene.name == 'LEVEL02.PHD') {
       // vilcabamba - underwater switch
-      vec3.setFromValues(item.position, 71808, 1702, 18992);
-      item.rotation[1] = -0.5 * Math.PI;
-      item.room = this.scene.rooms[26];
+      // vec3.setFromValues(item.position, 71808, 1702, 18992);
+      // item.rotation[1] = -0.5 * Math.PI;
+      // item.room = this.scene.rooms[26];
 
       // vilcabamba - trap door
       // vec3.setFromValues(item.position, 20608, -768, 30173);

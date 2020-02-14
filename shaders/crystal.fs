@@ -21,5 +21,3 @@ void main(void) {
   o_color.xyz = tonemap(o_color.xyz);
   o_color.w = 1.0;
 }
-
-

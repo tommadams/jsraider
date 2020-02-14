@@ -1,3 +1,4 @@
+import * as icosphere from 'toybox/geom/icosphere';
 import * as mat4 from 'toybox/math/mat4';
 import * as vec2 from 'toybox/math/vec2';
 import * as vec3 from 'toybox/math/vec3';
@@ -9,6 +10,7 @@ import {DynamicCubeMap} from 'toybox/gl/dynamic_cube_map';
 import {DynamicDraw} from 'toybox/gl/dynamic_draw';
 import {Framebuffer} from 'toybox/gl/framebuffer';
 import {ShaderProgram} from 'toybox/gl/shader';
+import {VertexArray} from 'toybox/gl/vertex_array';
 import {getMagFilter, Texture2D, Texture2DDef} from 'toybox/gl/texture';
 
 import {TweakObject} from 'toybox/app/tweaks';
@@ -80,6 +82,8 @@ export class Renderer {
 
   private cubeMap: DynamicCubeMap;
 
+  private probeVa: VertexArray;
+
   constructor(ctx: Context, scene: Scene, lara: Lara) {
     this.ctx = ctx;
     this.scene_ = scene;
@@ -120,10 +124,13 @@ export class Renderer {
         {size: 256, format: GL.DEPTH_COMPONENT16});
 
     this.cubeMap = new DynamicCubeMap(
-        this.ctx,
-        {size: 256, format: GL.RGBA8, filter: GL.LINEAR},
-        {size: 256, format: GL.DEPTH_COMPONENT16},
-        8, 102400);
+        this.ctx, {size: 128, format: GL.RGBA8, filter: GL.LINEAR}, 8, 102400);
+
+    let mesh = icosphere.getFlatMesh(3);
+    this.probeVa = ctx.newVertexArray({
+      position: {size: 3, data: mesh.positions},
+      indices: {data: mesh.faceIndices},
+    });
 
     this.shaders = {
       causticsQuad: ctx.newShaderProgram('shaders/caustics_quad.vs', 
@@ -135,7 +142,8 @@ export class Renderer {
       quad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs'),
       tri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs'),
       sprite: ctx.newShaderProgram('shaders/sprite.vs', 'shaders/sprite.fs'),
-      reflect: ctx.newShaderProgram('shaders/reflect.vs', 'shaders/reflect.fs'),
+      crystal: ctx.newShaderProgram('shaders/crystal.vs', 'shaders/crystal.fs'),
+      probeReflect: ctx.newShaderProgram('shaders/probe_reflect.vs', 'shaders/probe_reflect.fs'),
     };
 
     this.portalDraw_ = new DynamicDraw(ctx);
@@ -178,7 +186,7 @@ export class Renderer {
 
     let crystal = this.findClosestVisibleSaveCrystal(mainView);
     if (crystal != null) {
-      let reflectView = new RenderView('reflect');
+      let reflectView = new RenderView('crystal');
       reflectView.fb = this.reflectFb;
 
       mat4.getTranslation(reflectView.eyePos, crystal.animState.meshTransforms[0]);
@@ -199,17 +207,20 @@ export class Renderer {
     // CUBE MAP
     // CUBE MAP
     // CUBE MAP
-    let origin = mat4.getTranslation(vec3.newZero(), cameraTransform);
-    this.cubeMap.setOrigin(origin);
+    let P = this.lara_.item.position;
+    let R = 256;
+    let center = vec3.newFromValues(P[0], P[1] - 768 - 2 * R, P[2]);
+    let cubeRoom = this.lara_.sector.getResolvedSectorByPosition(center).room;
+    this.cubeMap.setOrigin(center);
     for (let face of this.cubeMap.faces) {
       let view = new RenderView(`cube[${face.name}]`);
       view.fb = face.fb;
       mat4.setFromMat(view.view, face.view);
       mat4.setFromMat(view.proj, this.cubeMap.proj);
       mat4.setFromMat(view.viewProj, face.viewProj);
-      vec3.setFromVec(view.eyePos, origin);
+      vec3.setFromVec(view.eyePos, center);
 
-      view.visibleRooms = this.culler_.cull(room, view.view, view.proj);
+      view.visibleRooms = this.culler_.cull(cubeRoom, view.view, view.proj);
       this.drawRenderView(view);
     }
     ctx.bindFramebuffer(null);
@@ -221,6 +232,18 @@ export class Renderer {
           this.cubeMap.size, this.cubeMap.size);
       x += this.cubeMap.size;
     }
+
+
+    let eyePos = mat4.getTranslation(vec3.newZero(), cameraTransform);
+    ctx.useProgram(this.shaders.probeReflect);
+    ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
+    ctx.setUniform('center', center);
+    ctx.setUniform('radius', R);
+    ctx.setUniform('eyePos', eyePos);
+    ctx.setUniform('viewProj', mainView.viewProj);
+    ctx.bindTexture('tex', this.cubeMap.color);
+
+    ctx.draw(this.probeVa);
     // CUBE MAP
     // CUBE MAP
     // CUBE MAP
@@ -476,7 +499,7 @@ export class Renderer {
     }
 
     // Draw save crystals if any.
-    ctx.useProgram(this.shaders.reflect);
+    ctx.useProgram(this.shaders.crystal);
     ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
     ctx.setUniform('tint', 0.3, 0.3, 2.0);
     ctx.bindTexture('tex', this.reflectFb.color[0]);
