@@ -53,6 +53,10 @@ export function applyPostInitHacks(levelName: string, scene: Scene) {
   switch (levelName) {
     // The views from several windows in Lara's house overlap each other.
     case 'GYM.PHD':
+      // Starting room windows.
+      stencilRooms[1] = true;
+      stencilRooms[15] = true;
+
       // Music room windows.
       stencilRooms[2] = true;
       stencilRooms[6] = true;

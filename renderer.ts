@@ -209,7 +209,7 @@ export class Renderer {
     // CUBE MAP
     let P = this.lara_.item.position;
     let R = 256;
-    let center = vec3.newFromValues(P[0], P[1] - 768 - 2 * R, P[2]);
+    let center = vec3.newFromValues(P[0], P[1] - 800 - R, P[2]);
     let cubeRoom = this.lara_.sector.getResolvedSectorByPosition(center).room;
     this.cubeMap.setOrigin(center);
     for (let face of this.cubeMap.faces) {
