@@ -115,9 +115,9 @@ function fixSaveCrystalNormals(scene: Scene) {
         let c = mesh.coloredTris[i + 2] * 3;
 
         // Get the vertex positions.
-        let pa = vec3.newFromValues(mesh.vertices[a], mesh.vertices[a + 1], mesh.vertices[a + 2]);
-        let pb = vec3.newFromValues(mesh.vertices[b], mesh.vertices[b + 1], mesh.vertices[b + 2]);
-        let pc = vec3.newFromValues(mesh.vertices[c], mesh.vertices[c + 1], mesh.vertices[c + 2]);
+        let pa = vec3.newFromValues(mesh.positions[a], mesh.positions[a + 1], mesh.positions[a + 2]);
+        let pb = vec3.newFromValues(mesh.positions[b], mesh.positions[b + 1], mesh.positions[b + 2]);
+        let pc = vec3.newFromValues(mesh.positions[c], mesh.positions[c + 1], mesh.positions[c + 2]);
 
         // Get the vertex normals.
         let na = vec3.newFromValues(mesh.normals[a], mesh.normals[a + 1], mesh.normals[a + 2]);
@@ -143,22 +143,22 @@ function fixSaveCrystalNormals(scene: Scene) {
       }
 
       // Fix up the mesh data.
-      let vertices = new Int16Array(ps.length * 3);
-      let normals = new Int16Array(ns.length * 3);
+      let positions = new Int16Array(ps.length * 3);
+      let normals = new Float32Array(ns.length * 3);
       let coloredTris = new Uint16Array(ps.length * 4);
       for (let i = 0; i < ps.length; ++i) {
-        vertices[i * 3    ] = ps[i][0];
-        vertices[i * 3 + 1] = ps[i][1];
-        vertices[i * 3 + 2] = ps[i][2];
-        normals[i * 3    ] = 16383 * ns[i][0];
-        normals[i * 3 + 1] = 16383 * ns[i][1];
-        normals[i * 3 + 2] = 16383 * ns[i][2];
+        positions[i * 3    ] = ps[i][0];
+        positions[i * 3 + 1] = ps[i][1];
+        positions[i * 3 + 2] = ps[i][2];
+        normals[i * 3    ] = ns[i][0];
+        normals[i * 3 + 1] = ns[i][1];
+        normals[i * 3 + 2] = ns[i][2];
         coloredTris[i * 4    ] = i * 3;
         coloredTris[i * 4 + 1] = i * 3 + 1;
         coloredTris[i * 4 + 2] = i * 3 + 2;
         coloredTris[i * 4 + 3] = mesh.coloredTris[i * 4 + 3];
       }
-      mesh.vertices = vertices;
+      mesh.positions = positions;
       mesh.normals = normals;
       mesh.coloredTris = coloredTris;
     }

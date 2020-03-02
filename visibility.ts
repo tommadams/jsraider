@@ -98,7 +98,7 @@ export class Culler {
     }
     this.sortVisibleItems();
 
-    return this.visibleRooms;
+    return this.visibleRooms.slice();
   }
 
   setAllVisible() {
@@ -108,7 +108,7 @@ export class Culler {
       this.visibleRooms.push(new VisibleRoom(this.rooms[i], 0));
     }
     this.sortVisibleItems();
-    return this.visibleRooms;
+    return this.visibleRooms.slice();
   }
 
   // Traverses the portal graph, appending too visibleRooms and setting

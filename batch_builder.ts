@@ -84,10 +84,10 @@ export class BatchBuilder {
   triBuffers = new Map<number, TriBuffer>();
   quadBuffers = new Map<number, QuadBuffer>();
 
-  // TODO(tom): use Uint8Array for colors?
+  // TODO(tom): use Uint8Array for colors.
   constructor(public positions: Float32Array|Int16Array,
               public colors: Float32Array,
-              public normals: Int16Array,
+              public normals: Float32Array,
               public lightMap: TextureAtlas) {
   }
 
@@ -147,6 +147,15 @@ export class TriBuffer {
     }
   }
 
+  /**
+   * Adds a triangle to the buffer.
+   * Calculates a normal for the triangle if the mesh doesn't have vertex normals.
+   * @param primitives index buffer into the buffer's vertex arrays.
+   * @param base starting index into the primitives array of the first vertex.
+   * @param texture texture to apply to the triangle.
+   * @param color optional color for the primitive. If null, the buffer's
+   *              vertex colors are used if available (or flat white if not).
+   */
   addTri(primitives: Uint16Array, base: number, texture: AtlasObjectTexture,
          color: number[]|null) {
     // Calculate vertex positions.
@@ -290,6 +299,15 @@ export class QuadBuffer {
     }
   }
 
+  /**
+   * Adds a quad to the buffer.
+   * Calculates a normal for the quad if the mesh doesn't have vertex normals.
+   * @param primitives index buffer into the buffer's vertex arrays.
+   * @param base starting index into the primitives array of the first vertex.
+   * @param texture texture to apply to the quad.
+   * @param color optional color for the primitive. If null, the buffer's
+   *              vertex colors are used if available (or flat white if not).
+   */
   addQuad(primitives: Uint16Array, base: number, texture: AtlasObjectTexture,
           color: number[]|null) {
     // Calculate vertex positions.

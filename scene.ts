@@ -270,9 +270,9 @@ export class Light {
 export class Mesh {
   center: Int16Array;
   size: number;
-  vertices: Int16Array;
-  colors: Float32Array;
-  normals: Int16Array;
+  positions: Int16Array;
+  colors: Float32Array = null;
+  normals: Float32Array = null;
   dynamicLighting: boolean;
   texturedQuads: Uint16Array;
   texturedTris: Uint16Array;
@@ -284,13 +284,23 @@ export class Mesh {
   constructor(stream: Stream) {
     this.center = stream.readInt16Array(3);
     this.size = stream.readUint32();
-    this.vertices = stream.readInt16Array(3 * stream.readUint16());
+    this.positions = stream.readInt16Array(3 * stream.readUint16());
 
     let numVertices = stream.readInt16();
     this.dynamicLighting = numVertices > 0;
 
     if (this.dynamicLighting) {
-      this.normals = stream.readInt16Array(3 * numVertices);
+      let raw = stream.readInt16Array(3 * numVertices);
+      this.normals = new Float32Array(raw.length);
+      for (let i = 0; i < raw.length; i += 3) {
+        let x = raw[i];
+        let y = raw[i + 1];
+        let z = raw[i + 2];
+        let s = 1 / Math.sqrt(x * x + y * y + z * z);
+        this.normals[i] = s * x;
+        this.normals[i + 1] = s * y;
+        this.normals[i + 2] = s * z;
+      }
     } else {
       numVertices = -numVertices;
       this.colors = new Float32Array(3 * numVertices);
@@ -310,7 +320,7 @@ export class Mesh {
 
   init(ctx: Context, scene: Scene, lightMap: TextureAtlas) {
     let builder = new BatchBuilder(
-        this.vertices, this.colors, this.normals, lightMap);
+        this.positions, this.colors, this.normals, lightMap);
 
     for (let i = 0; i < this.texturedQuads.length; i += 5) {
       let texture = scene.atlasObjectTextures[this.texturedQuads[i + 4]];
@@ -659,7 +669,7 @@ export class Sector {
   }
 
   /** Sets nearPos to the position of the floor at the closest point in the
-   *sector * to pos. */
+   *sector to pos. */
   getNearestFloorPosition(pos: vec3.Type, nearPos: vec3.Type) {
     let sector = this.getResolvedFloorSector();
     let y = sector.getFloorAt(pos);
@@ -1054,13 +1064,13 @@ export class Room {
     //    4 * stream.readUint16());  // X Y Z color
 
     this.quads = stream.readUint16Array(
-        5 * stream.readUint16());  // vertices[4] texture
+        5 * stream.readUint16());  // positions[4] texture
 
     this.tris = stream.readUint16Array(
-        4 * stream.readUint16());  // vertices[3] texture
+        4 * stream.readUint16());  // positions[3] texture
 
     this.sprites = stream.readUint16Array(
-        2 * stream.readUint16());  // vertex texture
+        2 * stream.readUint16());  // position texture
 
     let num = stream.readUint16();
     //console.log('Reading ' + num + ' portals');
@@ -1146,7 +1156,7 @@ export class Room {
     for (let i = 0; i < this.staticMeshes.length; ++i) {
       let roomStaticMesh = this.staticMeshes[i];
       roomStaticMesh.staticMesh = scene.staticMeshes.find(
-          a => { return a.id == roomStaticMesh.id; });
+          a => a.id == roomStaticMesh.id);
       if (roomStaticMesh.staticMesh == null) {
         throw new Error('Couldn\'t find static mesh ' + roomStaticMesh.id);
       }
@@ -1289,6 +1299,27 @@ export class Room {
         }
       }
     }
+
+    // Find all rooms above and below.
+    // TODO(tom): move this into the renderer's ShProbeFields: it needs to be
+    // done after all rooms have been initialized.
+    // let allRooms = new Set<Room>();
+    // let pending: Room[] = [this];
+    // while (pending.length > 0) {
+    //   let room = pending.pop();
+    //   for (let sector of room.sectorTable) {
+    //     if (sector.roomAbove != null && !allRooms.has(sector.roomAbove)) {
+    //       allRooms.add(sector.roomAbove);
+    //       pending.push(sector.roomAbove);
+    //     }
+    //     if (sector.roomBelow != null && !allRooms.has(sector.roomBelow)) {
+    //       allRooms.add(sector.roomBelow);
+    //       pending.push(sector.roomBelow);
+    //     }
+    //   }
+    // }
+    // this.allRoomsAboveAndBelow = Array.from(allRooms.values());
+    // this.allRoomsAboveAndBelow.sort((a, b) => a.yBottom - b.yBottom);
   }
 
   getSectorByPosition(p: vec3.Type) {
