@@ -179,7 +179,7 @@ class DebugProbeField extends ShProbeField {
     for (let p of sphere.positions) {
       let col = vec3.newZero()
 
-      // Ambient illumination is physcially based.
+      // Ambient illumination is physically based.
       sh3.reconstruct(col, probe.sh, p);
 
       // Direct illumination is a massive hack that happens to look nice.
@@ -283,19 +283,17 @@ export class Renderer {
 
     this.shaders = {
       causticsQuad: ctx.newShaderProgram('shaders/caustics_quad.vs',
-                                         'shaders/caustics_quad.fs'),
+                                         'shaders/caustics.fs'),
       causticsTri: ctx.newShaderProgram('shaders/caustics_tri.vs',
-                                        'shaders/caustics_tri.fs'),
-      copyTex: ctx.newShaderProgram('shaders/copy_tex.vs',
-                                    'shaders/copy_tex.fs'),
-      colorQuad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs'),
-      colorTri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs'),
+                                        'shaders/caustics.fs'),
+      colorQuad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs', {ENABLE_LIGHTING: 1}),
+      colorTri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs', {ENABLE_LIGHTING: 1}),
       probeQuad: ctx.newShaderProgram('shaders/probe_quad.vs', 'shaders/probe.fs'),
       probeTri: ctx.newShaderProgram('shaders/probe_tri.vs', 'shaders/probe.fs'),
       sprite: ctx.newShaderProgram('shaders/sprite.vs', 'shaders/sprite.fs'),
       crystal: ctx.newShaderProgram('shaders/crystal.vs', 'shaders/crystal.fs'),
-      probeReflect: ctx.newShaderProgram('shaders/probe_reflect.vs', 'shaders/probe_reflect.fs'),
-      vertexColor: ctx.newShaderProgram('shaders/vertex_color.vs', 'shaders/vertex_color.fs'),
+      vertexColor: ctx.newShaderProgram('shaders/vertex_color.vs',
+                                        'shaders/vertex_color.fs'),
     };
 
     this.portalDraw_ = new DynamicDraw(ctx);
@@ -469,11 +467,32 @@ export class Renderer {
     // Color & depth pass.
     ctx.enable(GL.SAMPLE_ALPHA_TO_COVERAGE);
     ctx.bindFramebuffer(rv.fb);
-    // ctx.gl.drawBuffers([GL.COLOR_ATTACHMENT0]);
     ctx.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT);
     ctx.colorMask(true, true, true, false);
     ctx.depthFunc(GL.LEQUAL);
-    this.drawScene(rv);
+
+    // Some room meshes overlap each other. For those we apply stencil tests
+    // when rendering. Replace the stencil value on z-pass only (used when
+    // drawing the portals to set up the stencil test).
+    ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
+
+    // Draw visible rooms.
+    for (let visibleRoomIdx = 0; visibleRoomIdx < rv.visibleRooms.length; ++visibleRoomIdx) {
+      let visibleRoom = rv.visibleRooms[visibleRoomIdx];
+      let needStencilMask = (debug.options.stencilPortals &&
+                             !visibleRoom.cameraInside &&
+                             hacks.stencilRooms[visibleRoom.room.id]);
+
+      if (needStencilMask) {
+        // We can't use room.id because many levels have more than 256 rooms,
+        // but there should always be 256 or fewer rooms visible at one time.
+        this.drawStencilPortals(visibleRoom.room, visibleRoomIdx, rv.viewProj);
+      }
+
+      this.drawRoom(rv, visibleRoom, needStencilMask);
+    }
+
+    ctx.disable(GL.STENCIL_TEST);
     ctx.disable(GL.SAMPLE_ALPHA_TO_COVERAGE);
   }
 
@@ -502,35 +521,6 @@ export class Renderer {
 
     // Only write to pixels whose stencil value matches the portal's.
     ctx.stencilFunc(GL.EQUAL, stencilValue, 0xff);
-  }
-
-  // TODO(tom): also need to draw moveables if their room neighbours a visible
-  // room.
-  private drawScene(rv: RenderView) {
-    let ctx = this.ctx;
-
-    // Some room meshes overlap each other. For those we apply stencil tests
-    // when rendering. Replace the stencil value on z-pass only (used when
-    // drawing the portals to set up the stencil test).
-    ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
-
-    // Draw visible rooms.
-    for (let visibleRoomIdx = 0; visibleRoomIdx < rv.visibleRooms.length; ++visibleRoomIdx) {
-      let visibleRoom = rv.visibleRooms[visibleRoomIdx];
-      let needStencilMask = (debug.options.stencilPortals && 
-                             !visibleRoom.cameraInside &&
-                             hacks.stencilRooms[visibleRoom.room.id]);
-
-      if (needStencilMask) {
-        // We can't use room.id because many levels have more than 256 rooms,
-        // but there should always be 256 or fewer rooms visible at one time.
-        this.drawStencilPortals(visibleRoom.room, visibleRoomIdx, rv.viewProj);
-      }
-
-      this.drawRoom(rv, visibleRoom, needStencilMask);
-    }
-
-    ctx.disable(GL.STENCIL_TEST);
   }
 
   private drawBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: Batch[]) {
@@ -725,7 +715,6 @@ export class Renderer {
   private disableLighting() {
     let ctx = this.ctx;
     ctx.setUniform('ambient', 1.0);
-    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.setUniform('lights', this.noLightsConstants_);
   }
 

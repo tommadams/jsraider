@@ -1,7 +1,8 @@
+#ifdef ENABLE_LIGHTING
 #define NUM_LIGHTS 4
-
 uniform vec4 lights[NUM_LIGHTS];
 uniform float ambient;
+#endif
 
 float calculateCaustics(vec3 position, float time) {
   vec3 s = vec3(5.234, 1.734, 0.234);
@@ -11,6 +12,7 @@ float calculateCaustics(vec3 position, float time) {
 }
 
 float calculateLighting(vec3 normal) {
+#ifdef ENABLE_LIGHTING
   float light = ambient;
   for (int i = 0; i < NUM_LIGHTS; ++i) {
     float d = dot(lights[i].xyz, normal);
@@ -19,4 +21,7 @@ float calculateLighting(vec3 normal) {
     //light += max(0.0, dot(lights[i].xyz, n));
   }
   return light;
+#else
+  return 1.0;
+#endif
 }
