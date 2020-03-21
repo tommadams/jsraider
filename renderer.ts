@@ -32,26 +32,6 @@ import {Probe, ShProbeField} from 'sh_probe';
 
 let tmp = vec3.newZero();
 
-/// class RenderState {
-///   view = mat4.newZero();
-///   proj = mat4.newZero();
-///   viewProj = mat4.newZero();
-/// }
-///
-/// class RenderPass {
-///   public batches: {world: mat4.Type, batches: Batch[]}[] = [];
-///
-///   constructor(public state: RenderState, public shader: ShaderProgram) {
-///   }
-///
-///   addBatch(world: mat4.Type) {
-///   }
-///
-///   draw() {
-///     this.batches = [];
-///   }
-/// }
-
 console.log(`
   Calculating value to make quad bilinear interpolation match triangle interpolation:
    a         b
@@ -196,19 +176,19 @@ class DebugProbeField extends ShProbeField {
 
 export class Renderer {
   ctx: Context;
-  private scene_: Scene;
-  private lara_: Lara;
-  private fieldOfViewY_: number;
-  private texAnimIndex_: number;
+  private scene: Scene;
+  private lara: Lara;
+  private fieldOfViewY: number;
+  private texAnimIndex: number;
 
   private worldViewProj = mat4.newIdentity();
   private worldView = mat4.newIdentity();
   private identity = mat4.newIdentity();
 
-  private culler_: Culler;
+  private culler: Culler;
 
-  private lightConstants_ = new Float32Array(16);
-  private noLightsConstants_ = new Float32Array(16);
+  private lightConstants = new Float32Array(16);
+  private noLightsConstants = new Float32Array(16);
 
   private fogStart = 8192;
   private fogDensity = 0.00015;
@@ -218,9 +198,7 @@ export class Renderer {
 
   private shaders: {[key: string]: ShaderProgram};
 
-  private tint_ = vec4.newFromValues(1, 1, 1, 1);
-
-  private portalDraw_: DynamicDraw = null;
+  private portalDraw: DynamicDraw = null;
 
   private atlasTex: Texture2D;
   private shadow: ProjectionShadow;
@@ -233,16 +211,16 @@ export class Renderer {
 
   constructor(ctx: Context, scene: Scene, lara: Lara) {
     this.ctx = ctx;
-    this.scene_ = scene;
-    this.lara_ = lara;
-    this.fieldOfViewY_ = 60 * Math.PI / 180;
-    this.texAnimIndex_ = 0;
+    this.scene = scene;
+    this.lara = lara;
+    this.fieldOfViewY = 60 * Math.PI / 180;
+    this.texAnimIndex = 0;
 
     for (let room of scene.rooms) {
       this.probeFields.push(null);
     }
 
-    this.culler_ = new Culler(scene.rooms, scene.items);
+    this.culler = new Culler(scene.rooms, scene.items);
 
     this.atlasTex = ctx.newTexture2D({
       width: scene.atlasTex.width,
@@ -296,7 +274,7 @@ export class Renderer {
                                         'shaders/vertex_color.fs'),
     };
 
-    this.portalDraw_ = new DynamicDraw(ctx);
+    this.portalDraw = new DynamicDraw(ctx);
   }
 
   render(time: number, cameraTransform: mat4.Type, room: Room) {
@@ -308,13 +286,13 @@ export class Renderer {
 
     // Update globals.
     // Animate textures at 6fps.
-    this.texAnimIndex_ = Math.floor(time * 6);
+    this.texAnimIndex = Math.floor(time * 6);
     this.fogStart = debug.options.fogStart;
     this.fogDensity = debug.options.fogDensity / 1000;
 
     // TODO(tom): set these per RenderView
     let aspectRatio = ctx.canvas.width / ctx.canvas.height;
-    let fov = this.fieldOfViewY_;
+    let fov = this.fieldOfViewY;
 
     let mainView = new RenderView(
         'main', RenderView.ALL, this.shaders.colorQuad, this.shaders.colorTri);
@@ -323,7 +301,7 @@ export class Renderer {
     mat4.setPerspective(mainView.proj, fov, aspectRatio, 8, 102400);
     mat4.mul(mainView.viewProj, mainView.proj, mainView.view);
 
-    mainView.visibleRooms = this.culler_.cull(room, mainView.view, mainView.proj);
+    mainView.visibleRooms = this.culler.cull(room, mainView.view, mainView.proj);
 
     // TODO(tom): calculate all RenderView visible rooms first, then update
     // caustics on their union.
@@ -350,7 +328,7 @@ export class Renderer {
       mat4.setLookAt(reflectView.view, reflectView.eyePos, mainView.eyePos, vec3.newFromValues(0, -1, 0));
       mat4.setPerspective(reflectView.proj, 0.5 * Math.PI, 1, 8, 102400);
       mat4.mul(reflectView.viewProj, reflectView.proj, reflectView.view);
-      reflectView.visibleRooms = this.culler_.cull(crystal.room, reflectView.view, reflectView.proj);
+      reflectView.visibleRooms = this.culler.cull(crystal.room, reflectView.view, reflectView.proj);
       this.drawRenderView(reflectView);
 
       ctx.bindFramebuffer(null);
@@ -364,11 +342,11 @@ export class Renderer {
     // SH
     // SH
     // SH
-    let field = this.probeFields[this.lara_.item.room.id];
+    let field = this.probeFields[this.lara.item.room.id];
     if (field != null) {
       let sh = sh3.newZero();
 
-      let hips = this.lara_.item.animState.meshTransforms[0];
+      let hips = this.lara.item.animState.meshTransforms[0];
       let R = 128;
       let P = vec3.newFromValues(hips[12], hips[13], hips[14]);
       field.sample(sh, P);
@@ -430,7 +408,7 @@ export class Renderer {
     ctx.profile('debug', () => {
       // TODO(tom): call this from the main app, not the renderer internals, then
       // remove Lara and possible other dependencies.
-      debug.render(this.scene_, room, mainView.viewProj, mainView.visibleRooms);
+      debug.render(this.scene, room, mainView.viewProj, mainView.visibleRooms);
     });
   }
 
@@ -510,9 +488,9 @@ export class Renderer {
     // TODO(tom): Use pre-baked vertex arrays rather dynamic draw.
     ctx.stencilFunc(GL.ALWAYS, stencilValue, 0xff);
     for (let portal of room.portals) {
-      this.portalDraw_.polygon(portal.vertices, [0, 0, 0, 1]);
+      this.portalDraw.polygon(portal.vertices, [0, 0, 0, 1]);
     }
-    this.portalDraw_.flush(viewProj);
+    this.portalDraw.flush(viewProj);
 
     // Reset the render state.
     ctx.colorMask(true, true, true, false);
@@ -535,7 +513,7 @@ export class Renderer {
       if (batch.uvs.length > 1) {
         // Note: bindVertexBuffer only calls into GL if the vertex buffer is
         // different.
-        let frame = this.texAnimIndex_ % batch.uvs.length;
+        let frame = this.texAnimIndex % batch.uvs.length;
         batch.va.bindVertexBuffer(batch.uvs[frame]);
       }
       // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
@@ -569,7 +547,7 @@ export class Renderer {
 
       for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
         let roomStaticMesh = room.renderableStaticMeshes[i];
-        let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
+        let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
         this.drawBatches(
             rv,
             roomStaticMesh.transform,
@@ -621,7 +599,7 @@ export class Renderer {
 
       for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
         let roomStaticMesh = room.renderableStaticMeshes[i];
-        let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
+        let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
         this.drawBatches(
             rv,
             roomStaticMesh.transform,
@@ -703,7 +681,7 @@ export class Renderer {
       // room containing the gold idol in Vilcabamba, there is a large medikit
       // that's supposed to be hidden in the shadows.
       for (let item of visibleRoom.spriteSequences) {
-        let frame = this.texAnimIndex_ % item.spriteSequence.batches.length;
+        let frame = this.texAnimIndex % item.spriteSequence.batches.length;
         let batch = item.spriteSequence.batches[frame];
         ctx.setUniform('translation', item.position);
         ctx.setUniform('viewProj', rv.viewProj);
@@ -715,7 +693,7 @@ export class Renderer {
   private disableLighting() {
     let ctx = this.ctx;
     ctx.setUniform('ambient', 1.0);
-    ctx.setUniform('lights', this.noLightsConstants_);
+    ctx.setUniform('lights', this.noLightsConstants);
   }
 
   private setLighting(item: Item) {
@@ -753,24 +731,24 @@ export class Renderer {
       y += v[1] * intensity;
       z += v[2] * intensity;
       LL += intensity;
-      this.lightConstants_[j++] = v[0];
-      this.lightConstants_[j++] = v[1];
-      this.lightConstants_[j++] = v[2];
-      this.lightConstants_[j++] = intensity;
+      this.lightConstants[j++] = v[0];
+      this.lightConstants[j++] = v[1];
+      this.lightConstants[j++] = v[2];
+      this.lightConstants[j++] = intensity;
     }
-    while (j < this.lightConstants_.length) {
-      this.lightConstants_[j++] = 0;
+    while (j < this.lightConstants.length) {
+      this.lightConstants[j++] = 0;
     }
 
-    this.lightConstants_.fill(0);
+    this.lightConstants.fill(0);
     if (LL > 0) {
-      this.lightConstants_[0] = x / LL;
-      this.lightConstants_[1] = y / LL;
-      this.lightConstants_[2] = z / LL;
-      this.lightConstants_[3] = LL;
+      this.lightConstants[0] = x / LL;
+      this.lightConstants[1] = y / LL;
+      this.lightConstants[2] = z / LL;
+      this.lightConstants[3] = LL;
     }
 
-    ctx.setUniform('lights', this.lightConstants_);
+    ctx.setUniform('lights', this.lightConstants);
   }
 
   private updateCaustics(time: number, rooms: Room[]) {
@@ -828,7 +806,7 @@ export class Renderer {
       mat4.setFromMat(view.viewProj, face.viewProj);
       vec3.setFromVec(view.eyePos, pos);
 
-      view.visibleRooms = this.culler_.cull(room, view.view, view.proj);
+      view.visibleRooms = this.culler.cull(room, view.view, view.proj);
       this.drawRenderView(view);
     }
     for (let face of this.cubeMap.faces) {
