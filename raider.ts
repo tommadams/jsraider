@@ -1,4 +1,3 @@
-import * as app from 'toybox/app/app';
 import * as input from 'toybox/app/input';
 import * as mat4 from 'toybox/math/mat4';
 import * as vec3 from 'toybox/math/vec3';
@@ -6,6 +5,9 @@ import * as vec3 from 'toybox/math/vec3';
 import * as audio from 'audio';
 import * as debug from 'debug';
 import * as hacks from 'hacks';
+
+import {App} from 'toybox/app/app';
+import {ShaderEditor} from 'toybox/app/shader_editor'
 
 import {Animation} from 'animation';
 import {Camera} from 'camera';
@@ -16,7 +18,7 @@ import {FlyCamera} from 'fly_camera';
 import {Renderer} from 'renderer';
 import {Scene} from 'scene';
 
-class JsRaiderApp extends app.App {
+class JsRaiderApp extends App {
   private level: string;
   private paused = false;
   private scene: Scene = null;
@@ -68,6 +70,39 @@ class JsRaiderApp extends app.App {
     req.send(null);
 
     input.enable();
+
+    // Add shader editor.
+    const shaderEditor = new ShaderEditor(
+        document.getElementById('left-panel'), this.ctx);
+    shaderEditor.onCompile(() => {
+      if (!this.updating) {
+        this.render();
+      }
+    });
+
+    // Add canvas toggle.
+    document.getElementById('canvas-toggle').addEventListener('click', (e) => {
+      let panel = document.getElementById('main-panel');
+      let elem = e.target as HTMLElement;
+      if (elem.innerHTML == '-') {
+        panel.style.left = null;
+        panel.style.width = null;
+        panel.style.height = null;
+        document.getElementById('left-panel').style.display = null;
+        document.getElementById('bottom-panel').style.display = null;
+        elem.innerText = '+';
+      } else {
+        panel.style.left = '0';
+        panel.style.width = '100%';
+        panel.style.height = '100%';
+        document.getElementById('left-panel').style.display = 'none';
+        document.getElementById('bottom-panel').style.display = 'none';
+        elem.innerText = '-';
+        if (!this.updating) {
+          this.render();
+        }
+      }
+    });
   }
 
   protected onInit() {
@@ -80,17 +115,17 @@ class JsRaiderApp extends app.App {
 
   private loadLevel(buf: ArrayBuffer) {
     this.scene = new Scene(this.level, buf, this.ctx);
-  
+
     hacks.applyPostInitHacks(this.level, this.scene);
-  
+
     audio.init(
         this.scene.soundMap,
         this.scene.soundDetails,
         this.scene.samples,
         this.scene.sampleIndices);
-  
+
     this.initCamera();
-  
+
     this.renderer = new Renderer(this.ctx, this.scene, this.scene.lara);
   }
 
@@ -120,9 +155,9 @@ class JsRaiderApp extends app.App {
       }
       this.followCamera.update();
     }
-  
+
     audio.setListenerTransform(this.activeCamera.getTransform());
-  
+
     if (!this.paused) {
       // TODO(tom): maintain a list of active controllers
       for (let controller of this.scene.controllers) {
@@ -134,7 +169,7 @@ class JsRaiderApp extends app.App {
         }
       }
     }
-  
+
     if (input.keyPressed(input.KeyCodes.T) &&
         this.activeCamera == this.flyCamera) {
       vec3.setFromVec(lara.item.position, this.flyCamera.position);
@@ -163,7 +198,7 @@ class JsRaiderApp extends app.App {
     if (input.keyPressed(input.KeyCodes.P)) {
       window.open().document.write(`<img src="${this.ctx.canvas.toDataURL()}"/>`);
     }
-  
+
     input.flush();
   }
 
@@ -214,7 +249,7 @@ class JsRaiderApp extends app.App {
     let lara = this.scene.lara;
     let lookAtOffset = vec3.newFromValues(128, -128, 1024);
     let positionOffset = vec3.newFromValues(128, -256, -2048);
-  
+
     // Update Lara's mesh transforms so that the follow camera can be initialized
     // with a valid target position.
     let item = this.scene.lara.item;
@@ -228,21 +263,21 @@ class JsRaiderApp extends app.App {
     }
     let position = vec3.newZero();
     mat4.getTranslation(position, animState.meshTransforms[LaraBone.PELVIS]);
-  
+
     this.followCamera = new FollowCamera(
         lara.item, LaraBone.PELVIS, lookAtOffset, positionOffset);
     this.activeCamera = this.followCamera;
   }
-  
+
   private updateFlyCamera_(dt: number) {
     let dr = vec3.newFromValues(-input.mouseDy * 0.01, input.mouseDx * 0.01, 0);
     let dp = vec3.newZero();
-  
+
     let speed = 7680 * dt;
     if (input.keyDown(input.KeyCodes.SHIFT)) {
       speed = 1920 * dt;
     }
-  
+
     if (input.keyDown(input.KeyCodes.A)) { dp[0] -= 1; }
     if (input.keyDown(input.KeyCodes.D)) { dp[0] += 1; }
     if (input.keyDown(input.KeyCodes.F)) { dp[1] -= 1; }
@@ -250,7 +285,7 @@ class JsRaiderApp extends app.App {
     if (input.keyDown(input.KeyCodes.W)) { dp[2] -= 1; }
     if (input.keyDown(input.KeyCodes.S)) { dp[2] += 1; }
     vec3.scale(dp, speed, dp);
-  
+
     this.flyCamera.update(dp, dr);
   }
 
