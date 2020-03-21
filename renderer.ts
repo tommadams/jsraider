@@ -9,7 +9,7 @@ import {Mesh} from 'toybox/geom/mesh';
 
 import {GL, TextureMinFilter} from 'toybox/gl/constants';
 import {Context} from 'toybox/gl/context';
-import {DynamicCubeMap} from 'toybox/gl/dynamic_cube_map';
+import {DynamicCubeMap, FORWARD} from 'toybox/gl/dynamic_cube_map';
 import {DynamicDraw} from 'toybox/gl/dynamic_draw';
 import {Framebuffer} from 'toybox/gl/framebuffer';
 import {ShaderProgram} from 'toybox/gl/shader';
@@ -22,16 +22,51 @@ import {TweakObject} from 'toybox/app/tweaks';
 import * as debug from 'debug';
 import * as hacks from 'hacks';
 
-import {QuadBatch, TriBatch} from 'batch_builder';
+import {Batch} from 'batch_builder';
 import {Lara} from 'controllers/lara';
 import {ProjectionShadow} from 'projection_shadow';
 import {Item, Room, Scene} from 'scene';
 import {Culler, VisibleRoom} from 'visibility';
 
-import {projectIrradiance, ShProbeField} from 'sh_probe';
+import {Probe, ShProbeField} from 'sh_probe';
 
 let tmp = vec3.newZero();
 
+/// class RenderState {
+///   view = mat4.newZero();
+///   proj = mat4.newZero();
+///   viewProj = mat4.newZero();
+/// }
+///
+/// class RenderPass {
+///   public batches: {world: mat4.Type, batches: Batch[]}[] = [];
+///
+///   constructor(public state: RenderState, public shader: ShaderProgram) {
+///   }
+///
+///   addBatch(world: mat4.Type) {
+///   }
+///
+///   draw() {
+///     this.batches = [];
+///   }
+/// }
+
+console.log(`
+  Calculating value to make quad bilinear interpolation match triangle interpolation:
+   a         b
+    +-------+
+    |  x   /|
+    |   ./  |
+    |  /    |
+    |/      |
+    +-------+
+   d         c
+
+  x = (a + b + c + d) / 4
+  x = (b + d) / 2
+  c = b + d - a
+`);
 class RenderView {
   view = mat4.newZero();
   proj = mat4.newZero();
@@ -41,7 +76,8 @@ class RenderView {
   visibleRooms: VisibleRoom[];
   tint = vec3.newZero();
 
-  constructor(public name: string, public flags: number) {}
+  constructor(public name: string, public flags: number,
+              public quadShader: ShaderProgram, public triShader: ShaderProgram) {}
 
   updateTint(room: Room) {
     if (this.visibleRooms[0].room.isUnderwater() || room.isUnderwater()) {
@@ -56,6 +92,7 @@ namespace RenderView {
   export const STATIC = 1 << 0;
   export const MOVEABLES = 1 << 1;
   export const CRYSTALS = 1 << 2;
+  export const SPRITES = 1 << 3;
   export const ALL = ~0;
 }
 
@@ -71,21 +108,24 @@ class ColoredMesh {
 class DebugProbeField extends ShProbeField {
   va: VertexArray;
 
-  createVertexArray(ctx: Context, room: Room) {
+  createVertexArray(ctx: Context) {
     let radius = 128;
     let reflectance = 0.8;
+    let room = this.room;
+    let width = room.sectorTableWidth;
+    let height = room.sectorTableHeight;
 
     let x = room.x + 512;
     let z = room.z + 512;
     let pos = vec3.newZero();
     let meshes: ColoredMesh[] = [];
-    for (let j = 0; j < this.height; ++j) {
+    for (let j = 0; j < height; ++j) {
       pos[2] = z + j * 1024;
-      for (let i = 0; i < this.width; ++i) {
+      for (let i = 0; i < width; ++i) {
         pos[0] = x + i * 1024;
-        for (let probe of this.probes[i + j * this.width]) {
+        for (let probe of this.probes[i + j * width]) {
           pos[1] = probe.y;
-          let mesh = this.createProbeMesh(pos, probe.sh, radius, reflectance);
+          let mesh = this.createProbeMesh(pos, probe, radius, reflectance);
           meshes.push(mesh);
         }
       }
@@ -133,15 +173,20 @@ class DebugProbeField extends ShProbeField {
     });
   }
 
-  private createProbeMesh(pos: vec3.Type, sh: sh3.Type, radius: number, reflectance: number) {
-    let sphere = icosphere.getMesh(2).clone();
+  private createProbeMesh(pos: vec3.Type, probe: Probe, radius: number, reflectance: number) {
+    let sphere = icosphere.newMesh(3);
     let colors: vec3.Type[] = [];
     for (let p of sphere.positions) {
       let col = vec3.newZero()
-      sh3.reconstruct(col, sh, p);
-      col[0] = Math.pow(Math.max(reflectance * col[0], 0), 1 / 2.2);
-      col[1] = Math.pow(Math.max(reflectance * col[1], 0), 1 / 2.2);
-      col[2] = Math.pow(Math.max(reflectance * col[2], 0), 1 / 2.2);
+
+      // Ambient illumination is physcially based.
+      sh3.reconstruct(col, probe.sh, p);
+
+      // Direct illumination is a massive hack that happens to look nice.
+      const WRAP = 0.5;
+      let L = Math.max(0, (vec3.dot(p, probe.dir) + WRAP) / (1 + WRAP));
+      vec3.addScaled(col, col, probe.col, L * L);
+      vec3.pow(col, col, 1 / 2.2);
       colors.push(col);
       vec3.addScaled(p, pos, p, radius);
     }
@@ -165,8 +210,8 @@ export class Renderer {
   private lightConstants_ = new Float32Array(16);
   private noLightsConstants_ = new Float32Array(16);
 
-  private fogStart_ = 8192;
-  private fogDensity_ = 0.00015;
+  private fogStart = 8192;
+  private fogDensity = 0.00015;
 
   private bakedLightTex: Texture2D;
   private lightFb: Framebuffer;
@@ -229,18 +274,24 @@ export class Renderer {
         {size: 256, format: GL.RGBA8, filter: GL.LINEAR},
         {size: 256, format: GL.DEPTH_COMPONENT16});
 
-    this.cubeMap = new DynamicCubeMap(
-        this.ctx, {size: 32, format: GL.RGBA8, filter: GL.NEAREST}, 8, 102400, true);
+    let cubeMapFormat: DynamicCubeMap.Format[] = [
+        {format: GL.RGBA8, filter: GL.NEAREST},
+        {format: GL.RGBA8, filter: GL.NEAREST},
+        {format: GL.RGBA8, filter: GL.NEAREST},
+    ];
+    this.cubeMap = new DynamicCubeMap(this.ctx, 32, cubeMapFormat, 8, 102400, true);
 
     this.shaders = {
-      causticsQuad: ctx.newShaderProgram('shaders/caustics_quad.vs', 
+      causticsQuad: ctx.newShaderProgram('shaders/caustics_quad.vs',
                                          'shaders/caustics_quad.fs'),
-      causticsTri: ctx.newShaderProgram('shaders/caustics_tri.vs', 
+      causticsTri: ctx.newShaderProgram('shaders/caustics_tri.vs',
                                         'shaders/caustics_tri.fs'),
-      copyTex: ctx.newShaderProgram('shaders/copy_tex.vs', 
+      copyTex: ctx.newShaderProgram('shaders/copy_tex.vs',
                                     'shaders/copy_tex.fs'),
-      quad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs'),
-      tri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs'),
+      colorQuad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs'),
+      colorTri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs'),
+      probeQuad: ctx.newShaderProgram('shaders/probe_quad.vs', 'shaders/probe.fs'),
+      probeTri: ctx.newShaderProgram('shaders/probe_tri.vs', 'shaders/probe.fs'),
       sprite: ctx.newShaderProgram('shaders/sprite.vs', 'shaders/sprite.fs'),
       crystal: ctx.newShaderProgram('shaders/crystal.vs', 'shaders/crystal.fs'),
       probeReflect: ctx.newShaderProgram('shaders/probe_reflect.vs', 'shaders/probe_reflect.fs'),
@@ -260,14 +311,15 @@ export class Renderer {
     // Update globals.
     // Animate textures at 6fps.
     this.texAnimIndex_ = Math.floor(time * 6);
-    this.fogStart_ = debug.options.fogStart;
-    this.fogDensity_ = debug.options.fogDensity / 1000;
+    this.fogStart = debug.options.fogStart;
+    this.fogDensity = debug.options.fogDensity / 1000;
 
     // TODO(tom): set these per RenderView
     let aspectRatio = ctx.canvas.width / ctx.canvas.height;
     let fov = this.fieldOfViewY_;
 
-    let mainView = new RenderView('main', RenderView.ALL);
+    let mainView = new RenderView(
+        'main', RenderView.ALL, this.shaders.colorQuad, this.shaders.colorTri);
     mat4.invert(mainView.view, cameraTransform);
     mat4.getTranslation(mainView.eyePos, cameraTransform);
     mat4.setPerspective(mainView.proj, fov, aspectRatio, 8, 102400);
@@ -291,7 +343,9 @@ export class Renderer {
 
     let crystal = this.findClosestVisibleSaveCrystal(mainView);
     if (crystal != null) {
-      let reflectView = new RenderView('crystal', RenderView.STATIC | RenderView.MOVEABLES);
+      let reflectView = new RenderView(
+          'crystal', RenderView.STATIC | RenderView.MOVEABLES | RenderView.SPRITES,
+          this.shaders.colorQuad, this.shaders.colorTri);
       reflectView.fb = this.reflectFb;
 
       mat4.getTranslation(reflectView.eyePos, crystal.animState.meshTransforms[0]);
@@ -321,7 +375,7 @@ export class Renderer {
       let P = vec3.newFromValues(hips[12], hips[13], hips[14]);
       field.sample(sh, P);
 
-      let sphere = icosphere.getMesh(2).clone();
+      let sphere = icosphere.newMesh(2);
       let colors: vec3.Type[] = [];
       for (let p of sphere.positions) {
         let col = vec3.newZero()
@@ -362,6 +416,7 @@ export class Renderer {
 
     ctx.useProgram(this.shaders.vertexColor);
     ctx.setUniform('viewProj', mainView.viewProj);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of mainView.visibleRooms) {
       let field = this.probeFields[visibleRoom.room.id];
       if (field != null) {
@@ -478,28 +533,7 @@ export class Renderer {
     ctx.disable(GL.STENCIL_TEST);
   }
 
-  private drawTriBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: TriBatch[]) {
-    let ctx = this.ctx;
-
-    mat4.mul(this.worldViewProj, rv.viewProj, world);
-    ctx.setUniform('world', world);
-    ctx.setUniform('worldViewProj', this.worldViewProj);
-    ctx.setUniform('tint', rv.tint[0] * intensity, rv.tint[1] * intensity, rv.tint[2] * intensity);
-
-    for (let batch of batches) {
-      if (batch.uvs.length > 1) {
-        // Note: bindVertexBuffer only calls into GL if the vertex buffer is
-        // different.
-        let frame = this.texAnimIndex_ % batch.uvs.length;
-        batch.va.bindVertexBuffer(batch.uvs[frame]);
-      }
-      // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
-      // a single call.
-      ctx.draw(batch.va);
-    }
-  }
-
-  private drawQuadBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: QuadBatch[]) {
+  private drawBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: Batch[]) {
     let ctx = this.ctx;
 
     mat4.mul(this.worldViewProj, rv.viewProj, world);
@@ -527,8 +561,9 @@ export class Renderer {
     rv.updateTint(room);
 
     // Draw quad batches.
-    ctx.useProgram(this.shaders.quad);
-    ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
+    ctx.useProgram(rv.quadShader);
+    ctx.setUniform('proj', rv.proj);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.bindTexture('lightTex', this.lightFb.color[0]);
     ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
@@ -540,12 +575,12 @@ export class Renderer {
       if (stencilStaticMeshes) {
         ctx.enable(GL.STENCIL_TEST);
       }
-      this.drawQuadBatches(rv, this.identity, 1, room.quadBatches);
+      this.drawBatches(rv, this.identity, 1, room.quadBatches);
 
       for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
         let roomStaticMesh = room.renderableStaticMeshes[i];
         let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
-        this.drawQuadBatches(
+        this.drawBatches(
             rv,
             roomStaticMesh.transform,
             roomStaticMesh.intensity,
@@ -569,7 +604,7 @@ export class Renderer {
         let moveable = item.moveable;
         for (let idx of moveable.renderableMeshIndices) {
           let mesh = moveable.meshes[idx];
-          this.drawQuadBatches(
+          this.drawBatches(
               rv,
               animState.meshTransforms[idx],
               item.intensity,
@@ -579,8 +614,9 @@ export class Renderer {
     }
 
     // Draw tri batches.
-    ctx.useProgram(this.shaders.tri);
-    ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
+    ctx.useProgram(rv.triShader);
+    ctx.setUniform('proj', rv.proj);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.bindTexture('lightTex', this.lightFb.color[0]);
     ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
@@ -591,12 +627,12 @@ export class Renderer {
       if (stencilStaticMeshes) {
         ctx.enable(GL.STENCIL_TEST);
       }
-      this.drawTriBatches(rv, this.identity, 1, room.triBatches);
+      this.drawBatches(rv, this.identity, 1, room.triBatches);
 
       for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
         let roomStaticMesh = room.renderableStaticMeshes[i];
         let mesh = this.scene_.meshes[roomStaticMesh.staticMesh.mesh];
-        this.drawTriBatches(
+        this.drawBatches(
             rv,
             roomStaticMesh.transform,
             roomStaticMesh.intensity,
@@ -620,7 +656,7 @@ export class Renderer {
         let moveable = item.moveable;
         for (let idx of moveable.renderableMeshIndices) {
           let mesh = moveable.meshes[idx];
-          this.drawTriBatches(
+          this.drawBatches(
               rv,
               animState.meshTransforms[idx],
               item.intensity,
@@ -632,7 +668,7 @@ export class Renderer {
     if (rv.flags & RenderView.CRYSTALS) {
       // Draw save crystals if any.
       ctx.useProgram(this.shaders.crystal);
-      ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
+      ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
       ctx.setUniform('tint', 0.3, 0.3, 2.0);
       ctx.bindTexture('tex', this.reflectFb.color[0]);
       for (let item of visibleRoom.moveables) {
@@ -657,10 +693,10 @@ export class Renderer {
       }
     }
 
-    if (rv.flags & RenderView.STATIC) {
+    if (rv.flags & RenderView.SPRITES) {
       // Draw static sprite batch.
       ctx.useProgram(this.shaders.sprite);
-      ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
+      ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
       ctx.setUniform('eyePos', rv.eyePos);
       ctx.bindTexture('tex', this.atlasTex);
       ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
@@ -689,7 +725,7 @@ export class Renderer {
   private disableLighting() {
     let ctx = this.ctx;
     ctx.setUniform('ambient', 1.0);
-    ctx.setUniform('fogStartDensity', this.fogStart_, this.fogDensity_);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.setUniform('lights', this.noLightsConstants_);
   }
 
@@ -795,7 +831,8 @@ export class Renderer {
 
     this.cubeMap.setOrigin(pos);
     for (let face of this.cubeMap.faces) {
-      let view = new RenderView(`cube[${face.name}]`, RenderView.STATIC);
+      let view = new RenderView(
+          `cube[${face.name}]`, RenderView.STATIC, this.shaders.probeQuad, this.shaders.probeTri);
       view.fb = face.fb;
       mat4.setFromMat(view.view, face.view);
       mat4.setFromMat(view.proj, this.cubeMap.proj);
@@ -807,9 +844,11 @@ export class Renderer {
     }
     for (let face of this.cubeMap.faces) {
       ctx.bindFramebuffer(face.fb);
-      ctx.readBuffer(GL.COLOR_ATTACHMENT0);
-      ctx.readPixels(0, 0, this.cubeMap.size, this.cubeMap.size, this.cubeMap.color.format,
-                     this.cubeMap.color.type, face.pixels);
+      for (let i = 0; i < this.cubeMap.color.length; ++i) {
+        ctx.readBuffer(GL.COLOR_ATTACHMENT0 + i);
+        ctx.readPixels(0, 0, this.cubeMap.size, this.cubeMap.size, this.cubeMap.color[i].format,
+                       this.cubeMap.color[i].type, face.pixels[i]);
+      }
     }
     ctx.readBuffer(GL.NONE);
     ctx.bindFramebuffer(null);
@@ -818,7 +857,7 @@ export class Renderer {
   private createProbeFieldForRoom(room: Room) {
     let pos = vec3.newZero();
 
-    let field = new DebugProbeField(room.x, room.z, 1024, room.sectorTableWidth, room.sectorTableHeight);
+    let field = new DebugProbeField(room);
     let ri = room.x / 1024;
     let rj = room.z / 1024;
     for (let j = 0; j < room.sectorTableHeight; ++j) {
@@ -868,7 +907,7 @@ export class Renderer {
           this.addProbe(field, room, i, j, pos);
         } else {
           // Normal case: add probes roughly every 2048 units.
-          let numProbes = 1 + Math.max(1, Math.floor((end - start) / 2048));
+          let numProbes = 1 + Math.max(1, Math.round((end - start) / 2048));
           for (let step = 0; step < numProbes; ++step) {
             pos[1] = start + (end - start) * step / (numProbes - 1);
             this.addProbe(field, room, i, j, pos);
@@ -877,7 +916,7 @@ export class Renderer {
       }
     }
 
-    field.createVertexArray(this.ctx, room);
+    field.createVertexArray(this.ctx);
 
     return field;
   }
@@ -885,8 +924,7 @@ export class Renderer {
   private addProbe(field: ShProbeField, room: Room, i: number, j: number, pos: vec3.Type) {
     let sector = room.getSectorByPosition(pos).getResolvedSectorByPosition(pos);
     this.updateCubeMap(pos, sector.room);
-    let probe = field.insertProbe(i, j, pos[1]);
-    projectIrradiance(probe.sh, this.cubeMap);
+    field.insertProbe(i, j, pos[1], this.cubeMap);
   }
 }
 

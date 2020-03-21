@@ -15,12 +15,16 @@ let uvs = [vec2.newZero(), vec2.newZero(), vec2.newZero(), vec2.newZero()];
 let tmpNorm = [vec3.newZero(), vec3.newZero()];
 let polyNorm = vec3.newZero();
 
-export class TriBatch {
+export class Batch {
   attributes: number;
   va: VertexArray;
   uvs: VertexBuffer[] = [];
+}
 
+export class TriBatch extends Batch {
   constructor(ctx: Context, buffer: TriBuffer) {
+    super();
+
     this.attributes = buffer.attributes;
     this.va = ctx.newVertexArray({
       position: {size: 3, data: buffer.positions},
@@ -41,12 +45,10 @@ export class TriBatch {
   }
 }
 
-export class QuadBatch {
-  attributes: number;
-  va: VertexArray;
-  uvs: VertexBuffer[] = [];
-
+export class QuadBatch extends Batch{
   constructor(ctx: Context, buffer: QuadBuffer) {
+    super();
+
     this.attributes = buffer.attributes;
     this.va = ctx.newVertexArray({
       position: {size: 3, data: buffer.positions},
