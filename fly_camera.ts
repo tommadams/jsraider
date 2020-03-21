@@ -20,7 +20,7 @@ export class FlyCamera extends Camera {
     this.room = room;
 
     this.transform = mat4.newZero();
-    this.updateTransform_();
+    this.updateTransform();
   }
 
   getTransform() { return this.transform; }
@@ -73,10 +73,10 @@ export class FlyCamera extends Camera {
       this.room = intersection.room;
     }
 
-    this.updateTransform_();
+    this.updateTransform();
   }
 
-  private updateTransform_() {
+  private updateTransform() {
     mat4.setRotateY(this.transform, this.rotation[1]);
     mat4.rotateX(this.transform, this.rotation[0]);
     mat4.rotateZ(this.transform, this.rotation[2]);
