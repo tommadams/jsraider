@@ -1,6 +1,5 @@
 #include "shaders/sample_aann.inc"
-#include "shaders/fog.inc"
-#include "shaders/tonemap.inc"
+#include "shaders/util.inc"
 
 uniform sampler2D tex;
 uniform vec2 texSize;
@@ -12,6 +11,7 @@ out vec4 o_color;
 
 void main(void) {
   o_color = sampleAann(tex, texSize, v_uv);
+
   // Alpha-to-coverage generates 17 distinct dither patterns (on my NVIDIA 750M
   // at least). Only 5 of these patterns (0, 0.25, 0.5, 0.7, 1) don't cause any
   // dithering after multisampling is resolved.
@@ -23,6 +23,5 @@ void main(void) {
   }
 
   o_color.xyz *= v_color;
-  o_color.xyz = applyFog(o_color.xyz);
-  o_color.xyz = tonemap(o_color.xyz);
+  o_color.xyz = finalizeColor(o_color.xyz);
 }

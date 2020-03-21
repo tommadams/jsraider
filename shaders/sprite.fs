@@ -1,6 +1,5 @@
 #include "shaders/sample_aann.inc"
-#include "shaders/fog.inc"
-#include "shaders/tonemap.inc"
+#include "shaders/util.inc"
 
 uniform sampler2D tex;
 uniform vec2 texSize;
@@ -27,7 +26,6 @@ void main(void) {
 
   o_color.xyz *= v_color;
 
-  o_color.xyz = applyFog(o_color.xyz);
-  o_color.xyz = tonemap(o_color.xyz);
+  o_color.xyz = finalizeColor(o_color.xyz);
 }
 

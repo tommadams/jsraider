@@ -1,5 +1,4 @@
-#include "shaders/fog.inc"
-#include "shaders/tonemap.inc"
+#include "shaders/util.inc"
 
 uniform sampler2D tex;
 
@@ -17,7 +16,6 @@ void main(void) {
   float fresnel = 1.0 - max(normal.z, 0.0);
   o_color.xyz += 0.2 * fresnel * fresnel;
 
-  o_color.xyz = applyFog(o_color.xyz);
-  o_color.xyz = tonemap(o_color.xyz);
+  o_color.xyz = finalizeColor(o_color.xyz);
   o_color.w = 1.0;
 }

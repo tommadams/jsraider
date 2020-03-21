@@ -14,8 +14,9 @@ out vec3 v_color;
 out vec2 v_uv;
 
 void main(void) {
+  float dynamicLight = calculateLighting(normalize((world * vec4(normal, 0)).xyz));
+  vec3 lightMap = 2.0 * texture(lightTex, lightUv).xyz;
+  v_color = tint * dynamicLight * lightMap;
   v_uv = uv;
-  v_color = 2.0 * tint * texture(lightTex, lightUv).xyz;
-  v_color *= calculateLighting(normalize((world * vec4(normal, 0)).xyz));
   gl_Position = worldViewProj * vec4(position, 1);
 }
