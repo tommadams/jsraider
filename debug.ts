@@ -173,7 +173,6 @@ function drawLights(room: Room, viewProj: mat4.Type) {
   ctx.enable(GL.DEPTH_TEST);
 }
 
- 
 function drawLaraCollisions(lara: Lara, viewProj: mat4.Type) {
   for (let collision of lara.collisions) {
     draw.wireSphere(collision.p, 64, ORANGE);
