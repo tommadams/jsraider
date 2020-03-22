@@ -1,6 +1,7 @@
 // Based on: https://csantosbh.wordpress.com/tag/nearest-neighbor-sampling/
 // Samples the texture using anti-aliased nearest-neighbour filtering.
-vec4 sampleAann(sampler2D tex, vec2 texSize, vec2 uv) {
+vec4 sampleAann(sampler2D tex, vec2 uv) {
+  vec2 texSize = vec2(textureSize(tex, 0));
   vec2 duvDx = dFdx(uv);
   vec2 duvDy = dFdy(uv);
   uv *= texSize;

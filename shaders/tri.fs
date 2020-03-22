@@ -2,7 +2,6 @@
 #include "shaders/util.inc"
 
 uniform sampler2D tex;
-uniform vec2 texSize;
 
 in vec3 v_color;
 in vec2 v_uv;
@@ -10,7 +9,7 @@ in vec2 v_uv;
 out vec4 o_color;
 
 void main(void) {
-  o_color = sampleAann(tex, texSize, v_uv);
+  o_color = sampleAann(tex, v_uv);
 
   // Alpha-to-coverage generates 17 distinct dither patterns (on my NVIDIA 750M
   // at least). Only 5 of these patterns (0, 0.25, 0.5, 0.7, 1) don't cause any

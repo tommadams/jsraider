@@ -3,8 +3,6 @@
 #include "shaders/util.inc"
 
 uniform mat4 proj;
-uniform vec2 texSize;
-uniform vec2 lightTexSize;
 uniform sampler2D tex;
 uniform sampler2D lightTex;
 
@@ -19,7 +17,7 @@ out vec4 o_color;
 void main(void) {
   vec2 st = calculateST(v_pp1.xy, vec2(0), v_pp1.zw, v_p2p3.xy, v_p2p3.zw);
   vec2 uv = v_texBounds.xy + st * v_texBounds.zw;
-  o_color = sampleAann(tex, texSize, uv);
+  o_color = sampleAann(tex, uv);
 
   // Alpha-to-coverage generates 17 distinct dither patterns (on my NVIDIA 750M
   // at least). Only 5 of these patterns (0, 0.25, 0.5, 0.75, 1) don't cause any
@@ -31,7 +29,7 @@ void main(void) {
     discard;
   }
 
-  vec2 lightMapUv = v_lightUv + st / lightTexSize;
+  vec2 lightMapUv = v_lightUv + st / vec2(textureSize(lightTex, 0));
   vec3 lightMap = 2.0 * texture(lightTex, lightMapUv).xyz;
 
   o_color.xyz *= v_color * lightMap;

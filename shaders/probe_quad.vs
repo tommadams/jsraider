@@ -13,7 +13,6 @@ in vec4 p2p3;
 in vec4 uv;
 
 uniform sampler2D lightTex;
-uniform vec2 lightTexSize;
 
 out vec3 v_color;
 out vec3 v_normal;
@@ -21,7 +20,7 @@ out vec2 v_uv;
 
 void main(void) {
   vec2 st = calculateST(pp1.xy, vec2(0), pp1.zw, p2p3.xy, p2p3.zw);
-  vec2 lightMapUv = lightUv + st / lightTexSize;
+  vec2 lightMapUv = lightUv + st / vec2(textureSize(lightTex, 0));
   vec3 lightMap = 2.0 * texture(lightTex, lightMapUv).xyz;
 
   v_color = tint * lightMap;

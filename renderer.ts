@@ -534,8 +534,6 @@ export class Renderer {
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.bindTexture('lightTex', this.lightFb.color[0]);
-    ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
-    ctx.setUniform('lightTexSize', this.lightFb.width, this.lightFb.height);
 
     this.disableLighting();
 
@@ -587,7 +585,6 @@ export class Renderer {
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.bindTexture('tex', this.atlasTex);
     ctx.bindTexture('lightTex', this.lightFb.color[0]);
-    ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
 
     if (rv.flags & RenderView.STATIC) {
       this.disableLighting();
@@ -667,7 +664,6 @@ export class Renderer {
       ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
       ctx.setUniform('eyePos', rv.eyePos);
       ctx.bindTexture('tex', this.atlasTex);
-      ctx.setUniform('texSize', this.atlasTex.width, this.atlasTex.height);
 
       let sb = visibleRoom.room.spriteBatch;
       if (sb != null) {
@@ -769,8 +765,6 @@ export class Renderer {
     // Update caustics for quad primitives.
     ctx.useProgram(this.shaders.causticsQuad);
     ctx.bindTexture('lightTex', this.bakedLightTex);
-    ctx.setUniform(
-        'lightTexSize', this.bakedLightTex.width, this.bakedLightTex.height);
     ctx.setUniform('time', time);
     for (let room of rooms) {
       for (let batch of room.quadBatches) {
