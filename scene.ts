@@ -1037,6 +1037,8 @@ export class Room {
   quadBatches: QuadBatch[] = [];
   spriteBatch: SpriteBatch = null;
 
+  portalVa: VertexArray = null;
+
   constructor(stream: Stream) {
     this.id = -1;
     this.x = stream.readInt32();
@@ -1113,6 +1115,26 @@ export class Room {
     this.flags = stream.readUint16();
   }
 
+  private createPortalVertexArray(ctx: Context) {
+    let positions = new Float32Array(3 * 6 * this.portals.length);
+    let i = 0;
+    for (let portal of this.portals) {
+      let a = portal.vertices[0];
+      let b = portal.vertices[1];
+      let c = portal.vertices[2];
+      let d = portal.vertices[3];
+      positions[i++] = a[0];  positions[i++] = a[1];  positions[i++] = a[2];
+      positions[i++] = b[0];  positions[i++] = b[1];  positions[i++] = b[2];
+      positions[i++] = c[0];  positions[i++] = c[1];  positions[i++] = c[2];
+
+      positions[i++] = a[0];  positions[i++] = a[1];  positions[i++] = a[2];
+      positions[i++] = c[0];  positions[i++] = c[1];  positions[i++] = c[2];
+      positions[i++] = d[0];  positions[i++] = d[1];  positions[i++] = d[2];
+    }
+
+    this.portalVa = ctx.newVertexArray({position: {size: 3, data: positions}});
+  }
+
   init(ctx: Context, scene: Scene, id: number, lightMap: TextureAtlas) {
     this.id = id;
 
@@ -1129,6 +1151,8 @@ export class Room {
       builder.addTri(this.tris, i, texture, null);
     }
     builder.build(ctx, this.triBatches, this.quadBatches);
+
+    this.createPortalVertexArray(ctx);
 
     // Create billboards.
     if (this.sprites.length > 0) {

@@ -10,11 +10,10 @@ import {Mesh} from 'toybox/geom/mesh';
 import {GL, TextureMinFilter} from 'toybox/gl/constants';
 import {Context} from 'toybox/gl/context';
 import {DynamicCubeMap, FORWARD} from 'toybox/gl/dynamic_cube_map';
-import {DynamicDraw} from 'toybox/gl/dynamic_draw';
 import {Framebuffer} from 'toybox/gl/framebuffer';
 import {ShaderProgram} from 'toybox/gl/shader';
 import {VertexArray} from 'toybox/gl/vertex_array';
-import {getMagFilter, Texture2D, Texture2DDef} from 'toybox/gl/texture';
+import {getMagFilter, Texture, Texture2D, Texture2DDef} from 'toybox/gl/texture';
 
 import {TweakObject} from 'toybox/app/tweaks';
 
@@ -174,6 +173,21 @@ class DebugProbeField extends ShProbeField {
   }
 }
 
+class RenderPass {
+  lists: RenderPass.RenderList[] = [];
+  constructor(public rv: RenderView, public shader: ShaderProgram) {}
+}
+
+namespace RenderPass {
+  export class RenderList {
+    enableStencil = false;
+    world: mat4.Type = null;
+    uniforms: {[key: string]: Float32Array | number | number[]} = {};
+    samplers: {[key: string]: Texture} = {};
+    batches: Batch[] = [];
+  }
+}
+
 export class Renderer {
   ctx: Context;
   private scene: Scene;
@@ -198,8 +212,6 @@ export class Renderer {
 
   private shaders: {[key: string]: ShaderProgram};
 
-  private portalDraw: DynamicDraw = null;
-
   private atlasTex: Texture2D;
   private shadow: ProjectionShadow;
 
@@ -208,6 +220,14 @@ export class Renderer {
   private cubeMap: DynamicCubeMap;
 
   private probeFields: DebugProbeField[] = [];
+
+  private renderState = {
+    view: mat4.newZero(),
+    proj: mat4.newZero(),
+    fogStartDensity: new Float32Array(2),
+    tex: null as Texture2D,
+    lightTex: null as Texture2D,
+  };
 
   constructor(ctx: Context, scene: Scene, lara: Lara) {
     this.ctx = ctx;
@@ -272,9 +292,9 @@ export class Renderer {
       crystal: ctx.newShaderProgram('shaders/crystal.vs', 'shaders/crystal.fs'),
       vertexColor: ctx.newShaderProgram('shaders/vertex_color.vs',
                                         'shaders/vertex_color.fs'),
+      portalStencil: ctx.newShaderProgram('shaders/position_only.vs',
+                                          'shaders/position_only.fs'),
     };
-
-    this.portalDraw = new DynamicDraw(ctx);
   }
 
   render(time: number, cameraTransform: mat4.Type, room: Room) {
@@ -487,10 +507,9 @@ export class Renderer {
     // Write the stencil value to all visible portal pixels.
     // TODO(tom): Use pre-baked vertex arrays rather dynamic draw.
     ctx.stencilFunc(GL.ALWAYS, stencilValue, 0xff);
-    for (let portal of room.portals) {
-      this.portalDraw.polygon(portal.vertices, [0, 0, 0, 1]);
-    }
-    this.portalDraw.flush(viewProj);
+    ctx.useProgram(this.shaders.portalStencil);
+    ctx.setUniform('viewProj', viewProj);
+    ctx.draw(room.portalVa);
 
     // Reset the render state.
     ctx.colorMask(true, true, true, false);
@@ -522,6 +541,16 @@ export class Renderer {
     }
   }
 
+  private beginRenderPass(rv: RenderView, shader: ShaderProgram, tex: Texture = null) {
+    let ctx = this.ctx;
+    ctx.useProgram(shader);
+    ctx.setUniform('proj', rv.proj);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
+    ctx.setUniform('eyePos', rv.eyePos);
+    ctx.bindTexture('tex', tex || this.atlasTex);
+    ctx.bindTexture('lightTex', this.lightFb.color[0]);
+  }
+
   private drawRoom(rv: RenderView, visibleRoom: VisibleRoom, stencilStaticMeshes: boolean) {
     let ctx = this.ctx;
     let room = visibleRoom.room;
@@ -529,15 +558,9 @@ export class Renderer {
     rv.updateTint(room);
 
     // Draw quad batches.
-    ctx.useProgram(rv.quadShader);
-    ctx.setUniform('proj', rv.proj);
-    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
-    ctx.bindTexture('tex', this.atlasTex);
-    ctx.bindTexture('lightTex', this.lightFb.color[0]);
-
-    this.disableLighting();
-
+    this.beginRenderPass(rv, rv.quadShader);
     if (rv.flags & RenderView.STATIC) {
+      this.disableLighting();
       if (stencilStaticMeshes) {
         ctx.enable(GL.STENCIL_TEST);
       }
@@ -580,12 +603,7 @@ export class Renderer {
     }
 
     // Draw tri batches.
-    ctx.useProgram(rv.triShader);
-    ctx.setUniform('proj', rv.proj);
-    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
-    ctx.bindTexture('tex', this.atlasTex);
-    ctx.bindTexture('lightTex', this.lightFb.color[0]);
-
+    this.beginRenderPass(rv, rv.triShader);
     if (rv.flags & RenderView.STATIC) {
       this.disableLighting();
 
@@ -632,10 +650,8 @@ export class Renderer {
 
     if (rv.flags & RenderView.CRYSTALS) {
       // Draw save crystals if any.
-      ctx.useProgram(this.shaders.crystal);
-      ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
+      this.beginRenderPass(rv, this.shaders.crystal, this.reflectFb.color[0]);
       ctx.setUniform('tint', 0.3, 0.3, 2.0);
-      ctx.bindTexture('tex', this.reflectFb.color[0]);
       for (let item of visibleRoom.moveables) {
         if (!item.isSaveCrystal()) { continue; }
         let moveable = item.moveable;
@@ -660,11 +676,7 @@ export class Renderer {
 
     if (rv.flags & RenderView.SPRITES) {
       // Draw static sprite batch.
-      ctx.useProgram(this.shaders.sprite);
-      ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
-      ctx.setUniform('eyePos', rv.eyePos);
-      ctx.bindTexture('tex', this.atlasTex);
-
+      this.beginRenderPass(rv, this.shaders.sprite);
       let sb = visibleRoom.room.spriteBatch;
       if (sb != null) {
         ctx.setUniform('translation', 0, 0, 0);
