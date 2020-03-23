@@ -4,16 +4,17 @@ import * as vec2 from 'toybox/math/vec2';
 import * as vec3 from 'toybox/math/vec3';
 import * as vec4 from 'toybox/math/vec4';
 
+import * as debug from 'debug';
+import * as hacks from 'hacks';
 import {Item, Room} from 'scene';
 
 export class VisibleRoom {
   moveables: Item[] = [];
   spriteSequences: Item[] = [];
 
-  // True if the camera is inside the room, or close enough to a portal that
-  // the near plane would clip it.
-  cameraInside = false;
- 
+  // If non-zero, the room should be rendered with this stencil mask value.
+  stencilMask = 0;
+
   constructor(public room: Room, public depth: number) {}
 }
 
@@ -86,9 +87,14 @@ export class Culler {
           room, vec2.newFromValues(-1, -1), vec2.newFromValues(1, 1), 0);
     }
 
-    // Propagate the cameraInside flag.
+    // Calculate which rooms need a stencil mask.
+    let nextStencilMask = 1;
     for (let visibleRoom of this.visibleRooms) {
-      visibleRoom.cameraInside = this.cameraInside[visibleRoom.room.id] != 0;
+      if (hacks.stencilRooms[visibleRoom.room.id] &&
+          debug.options.stencilPortals &&
+          this.cameraInside[visibleRoom.room.id] == 0) {
+        visibleRoom.stencilMask = nextStencilMask++;
+      }
     }
 
     // Sort visible rooms by depth and recalculate mapping based on new order.

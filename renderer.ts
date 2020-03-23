@@ -475,37 +475,24 @@ export class Renderer {
     ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
 
     // Draw visible rooms.
-    for (let visibleRoomIdx = 0; visibleRoomIdx < rv.visibleRooms.length; ++visibleRoomIdx) {
-      let visibleRoom = rv.visibleRooms[visibleRoomIdx];
-      let needStencilMask = (debug.options.stencilPortals &&
-                             !visibleRoom.cameraInside &&
-                             hacks.stencilRooms[visibleRoom.room.id]);
-
-      if (needStencilMask) {
-        // We can't use room.id because many levels have more than 256 rooms,
-        // but there should always be 256 or fewer rooms visible at one time.
-        this.drawStencilPortals(visibleRoom.room, visibleRoomIdx, rv.viewProj);
-      }
-
-      this.drawRoom(rv, visibleRoom, needStencilMask);
+    for (let visibleRoom of rv.visibleRooms) {
+      this.drawRoom(rv, visibleRoom);
     }
 
     ctx.disable(GL.STENCIL_TEST);
     ctx.disable(GL.SAMPLE_ALPHA_TO_COVERAGE);
   }
 
-  private drawStencilPortals(room: Room, stencilValue: number, viewProj: mat4.Type) {
+  private drawPortalStencil(room: Room, stencilValue: number, viewProj: mat4.Type) {
     let ctx = this.ctx;
 
-    // Don't write to the depth or color buffers when drawing the stencil
-    // mask.
+    // Don't write to the depth or color buffers when drawing the stencil mask.
     ctx.enable(GL.STENCIL_TEST);
     ctx.colorMask(false, false, false, false);
     ctx.depthMask(false);
     ctx.stencilMask(0xff);
 
     // Write the stencil value to all visible portal pixels.
-    // TODO(tom): Use pre-baked vertex arrays rather dynamic draw.
     ctx.stencilFunc(GL.ALWAYS, stencilValue, 0xff);
     ctx.useProgram(this.shaders.portalStencil);
     ctx.setUniform('viewProj', viewProj);
@@ -516,7 +503,7 @@ export class Renderer {
     ctx.depthMask(true);
     ctx.stencilMask(0x00);
 
-    // Only write to pixels whose stencil value matches the portal's.
+    // Only write to pixels whose stencil value matches the stencil.
     ctx.stencilFunc(GL.EQUAL, stencilValue, 0xff);
   }
 
@@ -551,9 +538,20 @@ export class Renderer {
     ctx.bindTexture('lightTex', this.lightFb.color[0]);
   }
 
-  private drawRoom(rv: RenderView, visibleRoom: VisibleRoom, stencilStaticMeshes: boolean) {
+  private drawRoomBatches(rv: RenderView, visibleRooms: VisibleRoom[]) {
+    let ctx = this.ctx;
+    for (let visibleRoom of rv.visibleRooms) {
+      this.drawRoom(rv, visibleRoom);
+    }
+  }
+
+  private drawRoom(rv: RenderView, visibleRoom: VisibleRoom) {
     let ctx = this.ctx;
     let room = visibleRoom.room;
+
+    if (visibleRoom.stencilMask) {
+      this.drawPortalStencil(visibleRoom.room, visibleRoom.stencilMask, rv.viewProj);
+    }
 
     rv.updateTint(room);
 
@@ -561,7 +559,7 @@ export class Renderer {
     this.beginRenderPass(rv, rv.quadShader);
     if (rv.flags & RenderView.STATIC) {
       this.disableLighting();
-      if (stencilStaticMeshes) {
+      if (visibleRoom.stencilMask) {
         ctx.enable(GL.STENCIL_TEST);
       }
       this.drawBatches(rv, this.identity, 1, room.quadBatches);
@@ -577,7 +575,7 @@ export class Renderer {
       }
 
       // Don't perform stencil test for moveables because they can intersect portals.
-      if (stencilStaticMeshes) {
+      if (visibleRoom.stencilMask) {
         ctx.disable(GL.STENCIL_TEST);
       }
     }
@@ -607,7 +605,7 @@ export class Renderer {
     if (rv.flags & RenderView.STATIC) {
       this.disableLighting();
 
-      if (stencilStaticMeshes) {
+      if (visibleRoom.stencilMask) {
         ctx.enable(GL.STENCIL_TEST);
       }
       this.drawBatches(rv, this.identity, 1, room.triBatches);
@@ -623,7 +621,7 @@ export class Renderer {
       }
 
       // Don't perform stencil test for moveables because they can intersect portals.
-      if (stencilStaticMeshes) {
+      if (visibleRoom.stencilMask) {
         ctx.disable(GL.STENCIL_TEST);
       }
     }
