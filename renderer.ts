@@ -474,16 +474,25 @@ export class Renderer {
     // drawing the portals to set up the stencil test).
     ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
 
-    // Draw visible rooms.
-    for (let visibleRoom of rv.visibleRooms) {
-      this.drawRoom(rv, visibleRoom);
+    if (rv.flags & RenderView.STATIC) {
+      this.drawWorldGeometry(rv);
+      this.drawStaticGeometry(rv);
+    }
+    if (rv.flags & RenderView.SPRITES) {
+      this.drawSprites(rv);
+    }
+    if (rv.flags & RenderView.MOVEABLES) {
+      this.drawMoveables(rv);
+    }
+    if (rv.flags & RenderView.CRYSTALS) {
+      this.drawCrystals(rv);
     }
 
     ctx.disable(GL.STENCIL_TEST);
     ctx.disable(GL.SAMPLE_ALPHA_TO_COVERAGE);
   }
 
-  private drawPortalStencil(room: Room, stencilValue: number, viewProj: mat4.Type) {
+  private drawPortalStencil(visibleRoom: VisibleRoom, viewProj: mat4.Type) {
     let ctx = this.ctx;
 
     // Don't write to the depth or color buffers when drawing the stencil mask.
@@ -493,10 +502,10 @@ export class Renderer {
     ctx.stencilMask(0xff);
 
     // Write the stencil value to all visible portal pixels.
-    ctx.stencilFunc(GL.ALWAYS, stencilValue, 0xff);
+    ctx.stencilFunc(GL.ALWAYS, visibleRoom.stencilMask, 0xff);
     ctx.useProgram(this.shaders.portalStencil);
     ctx.setUniform('viewProj', viewProj);
-    ctx.draw(room.portalVa);
+    ctx.draw(visibleRoom.room.portalVa);
 
     // Reset the render state.
     ctx.colorMask(true, true, true, false);
@@ -504,7 +513,7 @@ export class Renderer {
     ctx.stencilMask(0x00);
 
     // Only write to pixels whose stencil value matches the stencil.
-    ctx.stencilFunc(GL.EQUAL, stencilValue, 0xff);
+    ctx.stencilFunc(GL.EQUAL, visibleRoom.stencilMask, 0xff);
   }
 
   private drawBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: Batch[]) {
@@ -538,34 +547,46 @@ export class Renderer {
     ctx.bindTexture('lightTex', this.lightFb.color[0]);
   }
 
-  private drawRoomBatches(rv: RenderView, visibleRooms: VisibleRoom[]) {
+  private drawWorldGeometry(rv: RenderView) {
     let ctx = this.ctx;
+    this.beginRenderPass(rv, rv.quadShader);
+    this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
-      this.drawRoom(rv, visibleRoom);
+      if (visibleRoom.stencilMask) {
+        this.drawPortalStencil(visibleRoom, rv.viewProj);
+        ctx.enable(GL.STENCIL_TEST);
+        ctx.useProgram(rv.quadShader);
+      }
+      rv.updateTint(visibleRoom.room);
+      this.drawBatches(rv, this.identity, 1, visibleRoom.room.quadBatches);
+      if (visibleRoom.stencilMask) {
+        ctx.disable(GL.STENCIL_TEST);
+      }
+    }
+
+    this.beginRenderPass(rv, rv.triShader);
+    this.disableLighting();
+    for (let visibleRoom of rv.visibleRooms) {
+      if (visibleRoom.stencilMask) {
+        this.drawPortalStencil(visibleRoom, rv.viewProj);
+        ctx.enable(GL.STENCIL_TEST);
+        ctx.useProgram(rv.triShader);
+      }
+      rv.updateTint(visibleRoom.room);
+      this.drawBatches(rv, this.identity, 1, visibleRoom.room.triBatches);
+      if (visibleRoom.stencilMask) {
+        ctx.disable(GL.STENCIL_TEST);
+      }
     }
   }
 
-  private drawRoom(rv: RenderView, visibleRoom: VisibleRoom) {
+  private drawStaticGeometry(rv: RenderView) {
     let ctx = this.ctx;
-    let room = visibleRoom.room;
-
-    if (visibleRoom.stencilMask) {
-      this.drawPortalStencil(visibleRoom.room, visibleRoom.stencilMask, rv.viewProj);
-    }
-
-    rv.updateTint(room);
-
-    // Draw quad batches.
     this.beginRenderPass(rv, rv.quadShader);
-    if (rv.flags & RenderView.STATIC) {
-      this.disableLighting();
-      if (visibleRoom.stencilMask) {
-        ctx.enable(GL.STENCIL_TEST);
-      }
-      this.drawBatches(rv, this.identity, 1, room.quadBatches);
-
-      for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
-        let roomStaticMesh = room.renderableStaticMeshes[i];
+    this.disableLighting();
+    for (let visibleRoom of rv.visibleRooms) {
+      rv.updateTint(visibleRoom.room);
+      for (let roomStaticMesh of visibleRoom.room.renderableStaticMeshes) {
         let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
         this.drawBatches(
             rv,
@@ -573,45 +594,13 @@ export class Renderer {
             roomStaticMesh.intensity,
             mesh.quadBatches);
       }
-
-      // Don't perform stencil test for moveables because they can intersect portals.
-      if (visibleRoom.stencilMask) {
-        ctx.disable(GL.STENCIL_TEST);
-      }
     }
 
-    if (rv.flags & RenderView.MOVEABLES) {
-      for (let item of visibleRoom.moveables) {
-        // Save crystals are drawn with a special shader.
-        if (item.isSaveCrystal()) { continue; }
-
-        let animState = item.animState;
-
-        this.setLighting(item);
-        let moveable = item.moveable;
-        for (let idx of moveable.renderableMeshIndices) {
-          let mesh = moveable.meshes[idx];
-          this.drawBatches(
-              rv,
-              animState.meshTransforms[idx],
-              item.intensity,
-              mesh.quadBatches);
-        }
-      }
-    }
-
-    // Draw tri batches.
     this.beginRenderPass(rv, rv.triShader);
-    if (rv.flags & RenderView.STATIC) {
-      this.disableLighting();
-
-      if (visibleRoom.stencilMask) {
-        ctx.enable(GL.STENCIL_TEST);
-      }
-      this.drawBatches(rv, this.identity, 1, room.triBatches);
-
-      for (let i = 0; i < room.renderableStaticMeshes.length; ++i) {
-        let roomStaticMesh = room.renderableStaticMeshes[i];
+    this.disableLighting();
+    for (let visibleRoom of rv.visibleRooms) {
+      rv.updateTint(visibleRoom.room);
+      for (let roomStaticMesh of visibleRoom.room.renderableStaticMeshes) {
         let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
         this.drawBatches(
             rv,
@@ -619,62 +608,13 @@ export class Renderer {
             roomStaticMesh.intensity,
             mesh.triBatches);
       }
-
-      // Don't perform stencil test for moveables because they can intersect portals.
-      if (visibleRoom.stencilMask) {
-        ctx.disable(GL.STENCIL_TEST);
-      }
     }
+  }
 
-    if (rv.flags & RenderView.MOVEABLES) {
-      for (let item of visibleRoom.moveables) {
-        // Save crystals are drawn with a spectial shader.
-        if (item.isSaveCrystal()) { continue; }
-
-        let animState = item.animState;
-
-        this.setLighting(item);
-        let moveable = item.moveable;
-        for (let idx of moveable.renderableMeshIndices) {
-          let mesh = moveable.meshes[idx];
-          this.drawBatches(
-              rv,
-              animState.meshTransforms[idx],
-              item.intensity,
-              mesh.triBatches);
-        }
-      }
-    }
-
-    if (rv.flags & RenderView.CRYSTALS) {
-      // Draw save crystals if any.
-      this.beginRenderPass(rv, this.shaders.crystal, this.reflectFb.color[0]);
-      ctx.setUniform('tint', 0.3, 0.3, 2.0);
-      for (let item of visibleRoom.moveables) {
-        if (!item.isSaveCrystal()) { continue; }
-        let moveable = item.moveable;
-        let animState = item.animState;
-        for (let idx of moveable.renderableMeshIndices) {
-          let mesh = moveable.meshes[idx];
-          let world = animState.meshTransforms[idx];
-          mat4.mul(this.worldViewProj, rv.viewProj, world);
-          mat4.mul(this.worldView, rv.view, world);
-          ctx.setUniform('worldView', this.worldView);
-          ctx.setUniform('worldViewProj', this.worldViewProj);
-
-          for (let batch of mesh.triBatches) {
-            ctx.draw(batch.va);
-          }
-          for (let batch of mesh.quadBatches) {
-            ctx.draw(batch.va);
-          }
-        }
-      }
-    }
-
-    if (rv.flags & RenderView.SPRITES) {
-      // Draw static sprite batch.
-      this.beginRenderPass(rv, this.shaders.sprite);
+  private drawSprites(rv: RenderView) {
+    let ctx = this.ctx;
+    this.beginRenderPass(rv, this.shaders.sprite);
+    for (let visibleRoom of rv.visibleRooms) {
       let sb = visibleRoom.room.spriteBatch;
       if (sb != null) {
         ctx.setUniform('translation', 0, 0, 0);
@@ -692,6 +632,66 @@ export class Renderer {
         ctx.setUniform('translation', item.position);
         ctx.setUniform('viewProj', rv.viewProj);
         ctx.draw(batch.va);
+      }
+    }
+  }
+
+  private drawMoveables(rv: RenderView) {
+    let ctx = this.ctx;
+    this.beginRenderPass(rv, rv.quadShader);
+    for (let visibleRoom of rv.visibleRooms) {
+      rv.updateTint(visibleRoom.room);
+      for (let item of visibleRoom.moveables) {
+        if (item.isSaveCrystal()) { continue; }
+        this.setLighting(item);
+        for (let idx of item.moveable.renderableMeshIndices) {
+          let mesh = item.moveable.meshes[idx];
+          this.drawBatches(
+              rv,
+              item.animState.meshTransforms[idx],
+              item.intensity,
+              mesh.quadBatches);
+        }
+      }
+    }
+
+    this.beginRenderPass(rv, rv.triShader);
+    for (let visibleRoom of rv.visibleRooms) {
+      rv.updateTint(visibleRoom.room);
+      for (let item of visibleRoom.moveables) {
+        if (item.isSaveCrystal()) { continue; }
+        this.setLighting(item);
+        for (let idx of item.moveable.renderableMeshIndices) {
+          let mesh = item.moveable.meshes[idx];
+          this.drawBatches(
+              rv,
+              item.animState.meshTransforms[idx],
+              item.intensity,
+              mesh.triBatches);
+        }
+      }
+    }
+  }
+
+  private drawCrystals(rv: RenderView) {
+    let ctx = this.ctx;
+    this.beginRenderPass(rv, this.shaders.crystal, this.reflectFb.color[0]);
+    ctx.setUniform('tint', 0.3, 0.3, 2.0);
+    for (let visibleRoom of rv.visibleRooms) {
+      for (let item of visibleRoom.moveables) {
+        if (!item.isSaveCrystal()) { continue; }
+        let moveable = item.moveable;
+        let animState = item.animState;
+        for (let idx of moveable.renderableMeshIndices) {
+          let mesh = moveable.meshes[idx];
+          let world = animState.meshTransforms[idx];
+          mat4.mul(this.worldViewProj, rv.viewProj, world);
+          mat4.mul(this.worldView, rv.view, world);
+          ctx.setUniform('worldView', this.worldView);
+          ctx.setUniform('worldViewProj', this.worldViewProj);
+          for (let batch of mesh.triBatches) { ctx.draw(batch.va); }
+          for (let batch of mesh.quadBatches) { ctx.draw(batch.va); }
+        }
       }
     }
   }
