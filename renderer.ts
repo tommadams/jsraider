@@ -215,11 +215,13 @@ export class Renderer {
   private atlasTex: Texture2D;
   private shadow: ProjectionShadow;
 
-  private reflectFb: Framebuffer;
+  private crystalFb: Framebuffer;
 
   private cubeMap: DynamicCubeMap;
 
   private probeFields: DebugProbeField[] = [];
+
+  private texBindings: [string, Texture][] = [];
 
   private renderState = {
     view: mat4.newZero(),
@@ -268,7 +270,7 @@ export class Renderer {
     this.bakedLightTex = ctx.newTexture2D(lightTexDef);
     this.lightFb = ctx.newFramebuffer(lightTexDef);
 
-    this.reflectFb = ctx.newFramebuffer(
+    this.crystalFb = ctx.newFramebuffer(
         {size: 256, format: GL.RGBA8, filter: GL.LINEAR},
         {size: 256, format: GL.DEPTH_COMPONENT16});
 
@@ -279,21 +281,56 @@ export class Renderer {
     ];
     this.cubeMap = new DynamicCubeMap(this.ctx, 32, cubeMapFormat, 8, 102400, true);
 
+    // Set the default texture bindings for when rendering normal geometry.
+    // Subsequent render passes (e.g. projection shadow) stomp on some of these,
+    // so the texture bindings should be set before each beginning rendering pass.
+    // TODO(tom): fix this stomping so we only need to set the texture bindings once.
+    this.texBindings = [
+      ['tex', this.atlasTex],  // TODO(tom): rename tex to atlasTex
+      ['bakedLightTex', this.bakedLightTex],
+      ['lightTex', this.lightFb.color[0]],
+      ['crystalTex', this.crystalFb.color[0]],
+    ];
+
+    // Build a map from sampler name to texture unit.
+    // This map is passed in when compiling shaders.
+    let texUnits: {[key: string]: number} = {};
+    for (let i = 0; i < this.texBindings.length; ++i) {
+      let texName = this.texBindings[i][0];
+      texUnits[texName] = i;
+    }
+
     this.shaders = {
       causticsQuad: ctx.newShaderProgram('shaders/caustics_quad.vs',
-                                         'shaders/caustics.fs'),
+                                         'shaders/caustics.fs',
+                                         {defines: {ENABLE_LIGHTING: 1}, texUnits}),
       causticsTri: ctx.newShaderProgram('shaders/caustics_tri.vs',
-                                        'shaders/caustics.fs'),
-      colorQuad: ctx.newShaderProgram('shaders/quad.vs', 'shaders/quad.fs', {ENABLE_LIGHTING: 1}),
-      colorTri: ctx.newShaderProgram('shaders/tri.vs', 'shaders/tri.fs', {ENABLE_LIGHTING: 1}),
-      probeQuad: ctx.newShaderProgram('shaders/probe_quad.vs', 'shaders/probe.fs'),
-      probeTri: ctx.newShaderProgram('shaders/probe_tri.vs', 'shaders/probe.fs'),
-      sprite: ctx.newShaderProgram('shaders/sprite.vs', 'shaders/sprite.fs'),
-      crystal: ctx.newShaderProgram('shaders/crystal.vs', 'shaders/crystal.fs'),
+                                        'shaders/caustics.fs',
+                                        {defines: {ENABLE_LIGHTING: 1}, texUnits}),
+      colorQuad: ctx.newShaderProgram('shaders/quad.vs',
+                                      'shaders/quad.fs',
+                                      {defines: {ENABLE_LIGHTING: 1}, texUnits}),
+      colorTri: ctx.newShaderProgram('shaders/tri.vs',
+                                     'shaders/tri.fs',
+                                     {defines: {ENABLE_LIGHTING: 1}, texUnits}),
+      probeQuad: ctx.newShaderProgram('shaders/probe_quad.vs',
+                                      'shaders/probe.fs',
+                                      {texUnits}),
+      probeTri: ctx.newShaderProgram('shaders/probe_tri.vs',
+                                     'shaders/probe.fs',
+                                     {texUnits}),
+      sprite: ctx.newShaderProgram('shaders/sprite.vs',
+                                   'shaders/sprite.fs',
+                                   {texUnits}),
+      crystal: ctx.newShaderProgram('shaders/crystal.vs',
+                                    'shaders/crystal.fs',
+                                    {texUnits}),
       vertexColor: ctx.newShaderProgram('shaders/vertex_color.vs',
-                                        'shaders/vertex_color.fs'),
+                                        'shaders/vertex_color.fs',
+                                        {texUnits}),
       portalStencil: ctx.newShaderProgram('shaders/position_only.vs',
-                                          'shaders/position_only.fs'),
+                                          'shaders/position_only.fs',
+                                          {texUnits}),
     };
   }
 
@@ -342,7 +379,7 @@ export class Renderer {
       let reflectView = new RenderView(
           'crystal', RenderView.STATIC | RenderView.MOVEABLES | RenderView.SPRITES,
           this.shaders.colorQuad, this.shaders.colorTri);
-      reflectView.fb = this.reflectFb;
+      reflectView.fb = this.crystalFb;
 
       mat4.getTranslation(reflectView.eyePos, crystal.animState.meshTransforms[0]);
       mat4.setLookAt(reflectView.view, reflectView.eyePos, mainView.eyePos, vec3.newFromValues(0, -1, 0));
@@ -451,6 +488,12 @@ export class Renderer {
   private drawRenderView(rv: RenderView) {
     let ctx = this.ctx;
 
+    for (let i = 0; i < this.texBindings.length; ++i) {
+      let tex = this.texBindings[i][1];
+      ctx.gl.activeTexture(GL.TEXTURE0 + i);
+      ctx.gl.bindTexture(tex.target, tex.handle)
+    }
+
     // Set default render state.
     ctx.colorMask(true, true, true, true);
     ctx.depthMask(true);
@@ -516,6 +559,24 @@ export class Renderer {
     ctx.stencilFunc(GL.EQUAL, visibleRoom.stencilMask, 0xff);
   }
 
+  private drawWorldBatches(rv: RenderView, batches: Batch[]) {
+    let ctx = this.ctx;
+
+    ctx.setUniform('worldViewProj', rv.viewProj);
+    ctx.setUniform('tint', rv.tint);
+    for (let batch of batches) {
+      if (batch.uvs.length > 1) {
+        // Note: bindVertexBuffer only calls into GL if the vertex buffer is
+        // different.
+        let frame = this.texAnimIndex % batch.uvs.length;
+        batch.va.bindVertexBuffer(batch.uvs[frame]);
+      }
+      // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
+      // a single call.
+      ctx.draw(batch.va);
+    }
+  }
+
   private drawBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: Batch[]) {
     let ctx = this.ctx;
 
@@ -537,19 +598,10 @@ export class Renderer {
     }
   }
 
-  private beginRenderPass(rv: RenderView, shader: ShaderProgram, tex: Texture = null) {
-    let ctx = this.ctx;
-    ctx.useProgram(shader);
-    ctx.setUniform('proj', rv.proj);
-    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
-    ctx.setUniform('eyePos', rv.eyePos);
-    ctx.bindTexture('tex', tex || this.atlasTex);
-    ctx.bindTexture('lightTex', this.lightFb.color[0]);
-  }
-
   private drawWorldGeometry(rv: RenderView) {
     let ctx = this.ctx;
-    this.beginRenderPass(rv, rv.quadShader);
+    ctx.useProgram(rv.quadShader);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
       if (visibleRoom.stencilMask) {
@@ -564,7 +616,8 @@ export class Renderer {
       }
     }
 
-    this.beginRenderPass(rv, rv.triShader);
+    ctx.useProgram(rv.triShader);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
       if (visibleRoom.stencilMask) {
@@ -582,7 +635,8 @@ export class Renderer {
 
   private drawStaticGeometry(rv: RenderView) {
     let ctx = this.ctx;
-    this.beginRenderPass(rv, rv.quadShader);
+    ctx.useProgram(rv.quadShader);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
       rv.updateTint(visibleRoom.room);
@@ -596,7 +650,8 @@ export class Renderer {
       }
     }
 
-    this.beginRenderPass(rv, rv.triShader);
+    ctx.useProgram(rv.triShader);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
       rv.updateTint(visibleRoom.room);
@@ -613,7 +668,8 @@ export class Renderer {
 
   private drawSprites(rv: RenderView) {
     let ctx = this.ctx;
-    this.beginRenderPass(rv, this.shaders.sprite);
+    ctx.useProgram(this.shaders.sprite);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of rv.visibleRooms) {
       let sb = visibleRoom.room.spriteBatch;
       if (sb != null) {
@@ -638,7 +694,8 @@ export class Renderer {
 
   private drawMoveables(rv: RenderView) {
     let ctx = this.ctx;
-    this.beginRenderPass(rv, rv.quadShader);
+    ctx.useProgram(rv.quadShader);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of rv.visibleRooms) {
       rv.updateTint(visibleRoom.room);
       for (let item of visibleRoom.moveables) {
@@ -655,7 +712,8 @@ export class Renderer {
       }
     }
 
-    this.beginRenderPass(rv, rv.triShader);
+    ctx.useProgram(rv.triShader);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of rv.visibleRooms) {
       rv.updateTint(visibleRoom.room);
       for (let item of visibleRoom.moveables) {
@@ -675,8 +733,10 @@ export class Renderer {
 
   private drawCrystals(rv: RenderView) {
     let ctx = this.ctx;
-    this.beginRenderPass(rv, this.shaders.crystal, this.reflectFb.color[0]);
+    ctx.useProgram(this.shaders.crystal);
+    ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.setUniform('tint', 0.3, 0.3, 2.0);
+    ctx.setUniform('eyePos', rv.eyePos);
     for (let visibleRoom of rv.visibleRooms) {
       for (let item of visibleRoom.moveables) {
         if (!item.isSaveCrystal()) { continue; }
@@ -774,7 +834,7 @@ export class Renderer {
 
     // Update caustics for quad primitives.
     ctx.useProgram(this.shaders.causticsQuad);
-    ctx.bindTexture('lightTex', this.bakedLightTex);
+    ctx.bindTexture('bakedLightTex', this.bakedLightTex);
     ctx.setUniform('time', time);
     for (let room of rooms) {
       for (let batch of room.quadBatches) {
@@ -784,7 +844,7 @@ export class Renderer {
 
     // Update caustics for tri primitives.
     ctx.useProgram(this.shaders.causticsTri);
-    ctx.bindTexture('lightTex', this.bakedLightTex);
+    ctx.bindTexture('bakedLightTex', this.bakedLightTex);
     ctx.setUniform('time', time);
     for (let room of rooms) {
       for (let batch of room.triBatches) {

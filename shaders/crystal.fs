@@ -1,6 +1,6 @@
 #include "shaders/util.inc"
 
-uniform sampler2D tex;
+uniform sampler2D crystalTex;
 
 in vec3 v_color;
 in vec3 v_normal;
@@ -10,7 +10,7 @@ out vec4 o_color;
 void main(void) {
   vec3 normal = normalize(v_normal);
   vec2 uv = vec2(-0.5, 0.5) * normal.xy + 0.5;
-  o_color.xyz = v_color * texture(tex, uv).xyz;
+  o_color.xyz = v_color * texture(crystalTex, uv).xyz;
 
   // Add a cheap Fresnel reflection effect.
   float fresnel = 1.0 - max(normal.z, 0.0);
