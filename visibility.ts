@@ -117,8 +117,8 @@ export class Culler {
     return this.visibleRooms.slice();
   }
 
-  // Traverses the portal graph, appending too visibleRooms and setting
-  // cameraInside[room.id] if appropriate.
+  // Perform a depth-first traversal of the portal graph, appending to
+  // visibleRooms and setting cameraInside[room.id] if appropriate.
   private traverse(room: Room, min: vec2.Type, max: vec2.Type, depth: number) {
     let visibleRoom: VisibleRoom;
 
@@ -165,7 +165,7 @@ export class Culler {
       for (let c of clipped) {
         // Consider a portal close to the near plane if it's within 2x the near
         // clip value. We need to use some threshold slightly larger than the
-        // real near clip value to avoid artifacts. Surprisingly it seems that
+        // real near clip value to avoid artifacts. Surprisingly, it seems that
         // 10% larger than the near clip isn't sufficient.
         if (c[2] > -2 * this.near) {
           closeToNearPlane = true;

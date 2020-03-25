@@ -206,10 +206,10 @@ export class Lara extends Controller {
       // item.rotation[1] = Math.PI
       // item.room = this.scene.rooms[43];
 
-      // vilcabamba - portals
-      // vec3.setFromValues(item.position, 75545, 0, 32897);
-      // item.rotation[1] = -1.326450231515698;
-      // item.room = this.scene.rooms[85];
+      // vilcabamba - portal traversal
+      vec3.setFromValues(item.position, 75545, 0, 32897);
+      item.rotation[1] = -1.326450231515698;
+      item.room = this.scene.rooms[85];
     } else if (scene.name == 'LEVEL03A.PHD') {
       // lost valley - pick up
       // vec3.setFromValues(item.position, 27128, -3584, 1530);

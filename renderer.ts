@@ -55,7 +55,7 @@ class RenderView {
   visibleRooms: VisibleRoom[];
   tint = vec3.newZero();
 
-  constructor(public name: string, public flags: number,
+  constructor(public name: string,
               public quadShader: ShaderProgram, public triShader: ShaderProgram) {}
 
   updateTint(room: Room) {
@@ -65,14 +65,6 @@ class RenderView {
       vec3.setFromValues(this.tint, 1, 1, 1);
     }
   }
-}
-
-namespace RenderView {
-  export const STATIC = 1 << 0;
-  export const MOVEABLES = 1 << 1;
-  export const CRYSTALS = 1 << 2;
-  export const SPRITES = 1 << 3;
-  export const ALL = ~0;
 }
 
 // TODO(tom): remove ColoredMesh and extend the Mesh class to support vertex
@@ -223,13 +215,14 @@ export class Renderer {
 
   private texBindings: [string, Texture][] = [];
 
-  private renderState = {
-    view: mat4.newZero(),
-    proj: mat4.newZero(),
-    fogStartDensity: new Float32Array(2),
-    tex: null as Texture2D,
-    lightTex: null as Texture2D,
-  };
+  // RenderView used for the main render pass.
+  private mainView: RenderView = null;
+
+  // RenderView used for rendering the save crystal reflection.
+  private crystalView: RenderView = null;
+
+  // RenderViews used for rendering cube maps.
+  private cubeMapViews: RenderView[] = [];
 
   constructor(ctx: Context, scene: Scene, lara: Lara) {
     this.ctx = ctx;
@@ -332,6 +325,21 @@ export class Renderer {
                                           'shaders/position_only.fs',
                                           {texUnits}),
     };
+
+    // Create the render views.
+    this.mainView = new RenderView(
+        'main', this.shaders.colorQuad, this.shaders.colorTri);
+
+    this.crystalView = new RenderView(
+          'crystal', this.shaders.colorQuad, this.shaders.colorTri);
+    this.crystalView.fb = this.crystalFb;
+
+    for (let face of this.cubeMap.faces) {
+      let view = new RenderView(
+          `cube[${face.name}]`, this.shaders.probeQuad, this.shaders.probeTri);
+      view.fb = face.fb;
+      this.cubeMapViews.push(view);
+    }
   }
 
   render(time: number, cameraTransform: mat4.Type, room: Room) {
@@ -347,53 +355,30 @@ export class Renderer {
     this.fogStart = debug.options.fogStart;
     this.fogDensity = debug.options.fogDensity / 1000;
 
-    // TODO(tom): set these per RenderView
-    let aspectRatio = ctx.canvas.width / ctx.canvas.height;
-    let fov = this.fieldOfViewY;
-
-    let mainView = new RenderView(
-        'main', RenderView.ALL, this.shaders.colorQuad, this.shaders.colorTri);
-    mat4.invert(mainView.view, cameraTransform);
-    mat4.getTranslation(mainView.eyePos, cameraTransform);
-    mat4.setPerspective(mainView.proj, fov, aspectRatio, 8, 102400);
-    mat4.mul(mainView.viewProj, mainView.proj, mainView.view);
-
-    mainView.visibleRooms = this.culler.cull(room, mainView.view, mainView.proj);
+    this.updateRenderViews(cameraTransform, room);
+    this.updateSpriteSequences();
 
     // TODO(tom): calculate all RenderView visible rooms first, then update
     // caustics on their union.
-    ctx.profile('caustics', () => {
-      let rooms = [];
-      for (let visibleRoom of mainView.visibleRooms) {
-        if (visibleRoom.room.isUnderwater()) {
-          rooms.push(visibleRoom.room);
-        }
-      }
-      this.updateCaustics(time, rooms);
-    });
+    this.updateCaustics(time, this.mainView.visibleRooms);
 
-    this.drawRenderView(mainView);
-
-    let crystal = this.findClosestVisibleSaveCrystal(mainView);
-    if (crystal != null) {
-      let reflectView = new RenderView(
-          'crystal', RenderView.STATIC | RenderView.MOVEABLES | RenderView.SPRITES,
-          this.shaders.colorQuad, this.shaders.colorTri);
-      reflectView.fb = this.crystalFb;
-
-      mat4.getTranslation(reflectView.eyePos, crystal.animState.meshTransforms[0]);
-      mat4.setLookAt(reflectView.view, reflectView.eyePos, mainView.eyePos, vec3.newFromValues(0, -1, 0));
-      mat4.setPerspective(reflectView.proj, 0.5 * Math.PI, 1, 8, 102400);
-      mat4.mul(reflectView.viewProj, reflectView.proj, reflectView.view);
-      reflectView.visibleRooms = this.culler.cull(crystal.room, reflectView.view, reflectView.proj);
-      this.drawRenderView(reflectView);
-
+    if (this.crystalView.visibleRooms.length > 0) {
+      this.beginRenderPass(this.crystalView.fb);
+      this.drawWorldGeometry(this.crystalView);
+      this.drawStaticGeometry(this.crystalView);
+      this.drawSprites(this.crystalView);
+      this.drawMoveables(this.crystalView);
+      this.endRenderPass();
       ctx.bindFramebuffer(null);
-      // debug.draw.blitRgb(
-      //     reflectView.fb.color[0],
-      //     0, ctx.canvas.height - 2 * reflectView.fb.height,
-      //     2 * reflectView.fb.width, 2 * reflectView.fb.height);
     }
+
+    this.beginRenderPass(this.mainView.fb);
+    this.drawWorldGeometry(this.mainView);
+    this.drawStaticGeometry(this.mainView);
+    this.drawSprites(this.mainView);
+    this.drawMoveables(this.mainView);
+    this.drawCrystals(this.mainView);
+    this.endRenderPass();
 
     // SH
     // SH
@@ -440,7 +425,7 @@ export class Renderer {
         debug.draw.triangles.push(p1[0], p1[1], p1[2], c1[0], c1[1], c1[2], 1);
         debug.draw.triangles.push(p2[0], p2[1], p2[2], c2[0], c2[1], c2[2], 1);
       }
-      debug.draw.flush(mainView.viewProj, 0.1);
+      debug.draw.flush(this.mainView.viewProj, 0.1);
       // SH
       // SH
       // SH
@@ -448,9 +433,9 @@ export class Renderer {
     }
 
     ctx.useProgram(this.shaders.vertexColor);
-    ctx.setUniform('viewProj', mainView.viewProj);
+    ctx.setUniform('viewProj', this.mainView.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
-    for (let visibleRoom of mainView.visibleRooms) {
+    for (let visibleRoom of this.mainView.visibleRooms) {
       let field = this.probeFields[visibleRoom.room.id];
       if (field != null) {
         ctx.draw(field.va);
@@ -459,14 +444,75 @@ export class Renderer {
     }
 
     ctx.profile('shadow', () => {
-      this.shadow.draw(mainView.viewProj);
+      this.shadow.draw(this.mainView.viewProj);
     });
 
     ctx.profile('debug', () => {
       // TODO(tom): call this from the main app, not the renderer internals, then
       // remove Lara and possible other dependencies.
-      debug.render(this.scene, room, mainView.viewProj, mainView.visibleRooms);
+      debug.render(this.scene, room, this.mainView.viewProj, this.mainView.visibleRooms);
     });
+  }
+
+  private updateRenderViews(cameraTransform: mat4.Type, cameraRoom: Room) {
+    let aspectRatio = this.ctx.canvas.width / this.ctx.canvas.height;
+    let fov = this.fieldOfViewY;
+
+    mat4.invert(this.mainView.view, cameraTransform);
+    mat4.getTranslation(this.mainView.eyePos, cameraTransform);
+    mat4.setPerspective(this.mainView.proj, fov, aspectRatio, 8, 102400);
+    mat4.mul(this.mainView.viewProj, this.mainView.proj, this.mainView.view);
+    this.mainView.visibleRooms = this.culler.cull(cameraRoom, this.mainView.view, this.mainView.proj);
+
+    let crystal = this.findClosestVisibleSaveCrystal(this.mainView);
+    if (crystal == null) {
+      this.crystalView.visibleRooms = [];
+    } else {
+      mat4.getTranslation(this.crystalView.eyePos, crystal.animState.meshTransforms[0]);
+      mat4.setLookAt(this.crystalView.view, this.crystalView.eyePos, this.mainView.eyePos, vec3.newFromValues(0, -1, 0));
+      mat4.setPerspective(this.crystalView.proj, 0.5 * Math.PI, 1, 8, 102400);
+      mat4.mul(this.crystalView.viewProj, this.crystalView.proj, this.crystalView.view);
+      this.crystalView.visibleRooms = this.culler.cull(crystal.room, this.crystalView.view, this.crystalView.proj);
+    }
+  }
+
+  private updateSpriteSequences() {
+    let updateBatches = (batches: Batch[]) => {
+      for (let batch of batches) {
+        if (batch.uvs.length > 1) {
+          let frame = this.texAnimIndex % batch.uvs.length;
+          batch.va.bindVertexBuffer(batch.uvs[frame]);
+        }
+      }
+    };
+
+    let processedRooms = new Uint8Array(this.scene.rooms.length);
+
+    let updateRooms = (visibleRooms: VisibleRoom[]) => {
+      for (let visibleRoom of visibleRooms) {
+        if (processedRooms[visibleRoom.room.id]) { continue; }
+        processedRooms[visibleRoom.room.id] = 1;
+        updateBatches(visibleRoom.room.quadBatches);
+        updateBatches(visibleRoom.room.triBatches);
+
+        for (let roomStaticMesh of visibleRoom.room.renderableStaticMeshes) {
+          let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
+          updateBatches(mesh.quadBatches);
+          updateBatches(mesh.triBatches);
+        }
+
+        for (let item of visibleRoom.moveables) {
+          for (let idx of item.moveable.renderableMeshIndices) {
+            let mesh = item.moveable.meshes[idx];
+            updateBatches(mesh.quadBatches);
+            updateBatches(mesh.triBatches);
+          }
+        }
+      }
+    };
+
+    updateRooms(this.mainView.visibleRooms);
+    updateRooms(this.crystalView.visibleRooms);
   }
 
   private findClosestVisibleSaveCrystal(rv: RenderView) {
@@ -485,7 +531,9 @@ export class Renderer {
     return closest;
   }
 
-  private drawRenderView(rv: RenderView) {
+  // TODO(tom): a lot of the setup performed in beginRenderPass is redundant,
+  // clean it up.
+  private beginRenderPass(fb: Framebuffer) {
     let ctx = this.ctx;
 
     for (let i = 0; i < this.texBindings.length; ++i) {
@@ -507,7 +555,7 @@ export class Renderer {
 
     // Color & depth pass.
     ctx.enable(GL.SAMPLE_ALPHA_TO_COVERAGE);
-    ctx.bindFramebuffer(rv.fb);
+    ctx.bindFramebuffer(fb);
     ctx.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT);
     ctx.colorMask(true, true, true, false);
     ctx.depthFunc(GL.LEQUAL);
@@ -516,21 +564,10 @@ export class Renderer {
     // when rendering. Replace the stencil value on z-pass only (used when
     // drawing the portals to set up the stencil test).
     ctx.stencilOp(GL.KEEP, GL.KEEP, GL.REPLACE);
+  }
 
-    if (rv.flags & RenderView.STATIC) {
-      this.drawWorldGeometry(rv);
-      this.drawStaticGeometry(rv);
-    }
-    if (rv.flags & RenderView.SPRITES) {
-      this.drawSprites(rv);
-    }
-    if (rv.flags & RenderView.MOVEABLES) {
-      this.drawMoveables(rv);
-    }
-    if (rv.flags & RenderView.CRYSTALS) {
-      this.drawCrystals(rv);
-    }
-
+  private endRenderPass() {
+    let ctx = this.ctx;
     ctx.disable(GL.STENCIL_TEST);
     ctx.disable(GL.SAMPLE_ALPHA_TO_COVERAGE);
   }
@@ -559,24 +596,6 @@ export class Renderer {
     ctx.stencilFunc(GL.EQUAL, visibleRoom.stencilMask, 0xff);
   }
 
-  private drawWorldBatches(rv: RenderView, batches: Batch[]) {
-    let ctx = this.ctx;
-
-    ctx.setUniform('worldViewProj', rv.viewProj);
-    ctx.setUniform('tint', rv.tint);
-    for (let batch of batches) {
-      if (batch.uvs.length > 1) {
-        // Note: bindVertexBuffer only calls into GL if the vertex buffer is
-        // different.
-        let frame = this.texAnimIndex % batch.uvs.length;
-        batch.va.bindVertexBuffer(batch.uvs[frame]);
-      }
-      // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
-      // a single call.
-      ctx.draw(batch.va);
-    }
-  }
-
   private drawBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: Batch[]) {
     let ctx = this.ctx;
 
@@ -585,15 +604,9 @@ export class Renderer {
     ctx.setUniform('worldViewProj', this.worldViewProj);
     ctx.setUniform('tint', rv.tint[0] * intensity, rv.tint[1] * intensity, rv.tint[2] * intensity);
 
+    // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
+    // a single call.
     for (let batch of batches) {
-      if (batch.uvs.length > 1) {
-        // Note: bindVertexBuffer only calls into GL if the vertex buffer is
-        // different.
-        let frame = this.texAnimIndex % batch.uvs.length;
-        batch.va.bindVertexBuffer(batch.uvs[frame]);
-      }
-      // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
-      // a single call.
       ctx.draw(batch.va);
     }
   }
@@ -601,6 +614,8 @@ export class Renderer {
   private drawWorldGeometry(rv: RenderView) {
     let ctx = this.ctx;
     ctx.useProgram(rv.quadShader);
+    ctx.setUniform('world', this.identity);
+    ctx.setUniform('worldViewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
@@ -610,13 +625,16 @@ export class Renderer {
         ctx.useProgram(rv.quadShader);
       }
       rv.updateTint(visibleRoom.room);
-      this.drawBatches(rv, this.identity, 1, visibleRoom.room.quadBatches);
+      ctx.setUniform('tint', rv.tint[0], rv.tint[1], rv.tint[2]);
+      for (let batch of visibleRoom.room.quadBatches) { ctx.draw(batch.va); }
       if (visibleRoom.stencilMask) {
         ctx.disable(GL.STENCIL_TEST);
       }
     }
 
     ctx.useProgram(rv.triShader);
+    ctx.setUniform('world', this.identity);
+    ctx.setUniform('worldViewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
@@ -626,7 +644,8 @@ export class Renderer {
         ctx.useProgram(rv.triShader);
       }
       rv.updateTint(visibleRoom.room);
-      this.drawBatches(rv, this.identity, 1, visibleRoom.room.triBatches);
+      ctx.setUniform('tint', rv.tint[0], rv.tint[1], rv.tint[2]);
+      for (let batch of visibleRoom.room.triBatches) { ctx.draw(batch.va); }
       if (visibleRoom.stencilMask) {
         ctx.disable(GL.STENCIL_TEST);
       }
@@ -817,7 +836,13 @@ export class Renderer {
     ctx.setUniform('lights', this.lightConstants);
   }
 
-  private updateCaustics(time: number, rooms: Room[]) {
+  private updateCaustics(time: number, visibleRooms: VisibleRoom[]) {
+    let rooms = [];
+    for (let visibleRoom of visibleRooms) {
+      if (visibleRoom.room.isUnderwater()) {
+        rooms.push(visibleRoom.room);
+      }
+    }
     if (rooms.length == 0) {
       // Nothing to do.
       return;
@@ -861,17 +886,19 @@ export class Renderer {
     let ctx = this.ctx;
 
     this.cubeMap.setOrigin(pos);
-    for (let face of this.cubeMap.faces) {
-      let view = new RenderView(
-          `cube[${face.name}]`, RenderView.STATIC, this.shaders.probeQuad, this.shaders.probeTri);
-      view.fb = face.fb;
+    for (let i = 0; i < 6; ++i) {
+      let face = this.cubeMap.faces[i];
+      let view = this.cubeMapViews[i];
       mat4.setFromMat(view.view, face.view);
       mat4.setFromMat(view.proj, this.cubeMap.proj);
       mat4.setFromMat(view.viewProj, face.viewProj);
       vec3.setFromVec(view.eyePos, pos);
 
       view.visibleRooms = this.culler.cull(room, view.view, view.proj);
-      this.drawRenderView(view);
+      this.beginRenderPass(face.fb);
+      this.drawWorldGeometry(view);
+      this.drawStaticGeometry(view);
+      this.endRenderPass();
     }
     for (let face of this.cubeMap.faces) {
       ctx.bindFramebuffer(face.fb);
