@@ -1,5 +1,6 @@
-uniform mat4 worldView;
-uniform mat4 worldViewProj;
+uniform mat4 world;
+uniform mat4 view;
+uniform mat4 viewProj;
 uniform vec3 tint;
 
 in vec3 normal;
@@ -9,8 +10,8 @@ out vec3 v_color;
 out vec3 v_normal;
 
 void main(void) {
-  v_normal = (worldView * vec4(normal, 0)).xyz;
+  v_normal = (view * (world * vec4(normal, 0))).xyz;
   v_color = tint;
-  gl_Position = worldViewProj * vec4(position, 1);
+  gl_Position = viewProj * (world * vec4(position, 1));
 }
 

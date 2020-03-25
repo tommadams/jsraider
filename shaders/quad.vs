@@ -1,7 +1,7 @@
 #include "shaders/lighting.inc"
 
 uniform mat4 world;
-uniform mat4 worldViewProj;
+uniform mat4 viewProj;
 uniform vec3 tint;
 
 in vec3 normal;
@@ -25,5 +25,5 @@ void main(void) {
   v_pp1 = pp1;
   v_p2p3 = p2p3;
   v_texBounds = uv;
-  gl_Position = worldViewProj * vec4(position, 1);
+  gl_Position = viewProj * (world * vec4(position, 1));
 }

@@ -1,7 +1,7 @@
 #include "shaders/quad_st.inc"
 
 uniform mat4 world;
-uniform mat4 worldViewProj;
+uniform mat4 viewProj;
 uniform vec3 tint;
 uniform sampler2D lightTex;
 
@@ -20,5 +20,5 @@ void main(void) {
   v_color = tint * lightMap;
   v_uv = uv;
   v_normal = normal;
-  gl_Position = worldViewProj * vec4(position, 1);
+  gl_Position = viewProj * (world * vec4(position, 1));
 }

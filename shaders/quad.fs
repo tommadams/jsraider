@@ -15,7 +15,7 @@ in vec4 v_texBounds;
 out vec4 o_color;
 
 void main(void) {
-  vec2 st = calculateST(v_pp1.xy, vec2(0), v_pp1.zw, v_p2p3.xy, v_p2p3.zw);
+  vec2 st = calculateSTrel(v_pp1.xy, v_pp1.zw, v_p2p3.xy, v_p2p3.zw);
   vec2 uv = v_texBounds.xy + st * v_texBounds.zw;
   o_color = sampleAann(tex, uv);
 
@@ -34,11 +34,5 @@ void main(void) {
 
   o_color.xyz *= v_color * lightMap;
   o_color.xyz = finalizeColor(o_color.xyz);
-
-  // float A = proj[2].z - 1.0;
-  // float B = proj[3].z - 1.0;
-  // float linDepth = (B - 2.0 * gl_FragCoord.z / gl_FragCoord.w) / A;
-  // o_color.xyz *= 0.001;
-  // o_color.xyz += linDepth / (16.0 * 1024.0);
 }
 

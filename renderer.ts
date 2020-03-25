@@ -42,10 +42,35 @@ console.log(`
     +-------+
    d         c
 
-  x = (a + b + c + d) / 4
-  x = (b + d) / 2
-  c = b + d - a
+  For the simple mid-point case:
+    x = (a + b + c + d) / 4
+    x = (b + d) / 2
+    c = b + d - a
+
+  This also generalizes to any point on the diagonal bd, since:
+    v = 1 - u
+  Giving:
+    p = (1-u)*a + u*b
+    q = (1-u)*d + u*c
+    x = u*p + (1-u)*q
+    x = u*(1-u)*a + u*u*b + (1-u)*(1-u)*d + u*(1-u)*c
+  Since x must lie on the diagonal db:
+    x = u*b + (1-u)*d
+  Solving for c:
+    u*(1-u)*a + u*u*b + (1-u)*(1-u)*d + u*(1-u)*c = u*b + (1-u)*d
+    u*(1-u)*c = u*b - u*u*b + (1-u)*d - (1-u)*(1-u)*d - u*(1-u)*a
+    u*(1-u)*c = u*(1-u)*b + (1-u)*(1-(1-u))*d - u*(1-u)*a
+    u*(1-u)*c = u*(1-u)*b + u*(1-u)*d - u*(1-u)*a
+    c = b + d - a
 `);
+
+console.log(`
+  Be careful with the underwater tint when drawing probes:
+   - above the water, we want the tint on indirect illumination.
+   - in the water, we don't want double tinting from the direct
+     and indirect illumination.
+`);
+
 class RenderView {
   view = mat4.newZero();
   proj = mat4.newZero();
@@ -58,12 +83,12 @@ class RenderView {
   constructor(public name: string,
               public quadShader: ShaderProgram, public triShader: ShaderProgram) {}
 
-  updateTint(room: Room) {
-    if (this.visibleRooms[0].room.isUnderwater() || room.isUnderwater()) {
-      vec3.setFromValues(this.tint, 0.5, 1, 1);
-    } else {
-      vec3.setFromValues(this.tint, 1, 1, 1);
-    }
+  calculateTint(room: Room, intensity: number) {
+    let underwater = this.visibleRooms[0].room.isUnderwater() || room.isUnderwater();
+    this.tint[0] = underwater ? 0.5 * intensity : intensity;
+    this.tint[1] = intensity;
+    this.tint[2] = intensity;
+    return this.tint;
   }
 }
 
@@ -187,7 +212,6 @@ export class Renderer {
   private fieldOfViewY: number;
   private texAnimIndex: number;
 
-  private worldViewProj = mat4.newIdentity();
   private worldView = mat4.newIdentity();
   private identity = mat4.newIdentity();
 
@@ -596,23 +620,39 @@ export class Renderer {
     ctx.stencilFunc(GL.EQUAL, visibleRoom.stencilMask, 0xff);
   }
 
-  private drawBatches(rv: RenderView, world: mat4.Type, intensity: number, batches: Batch[]) {
-    let ctx = this.ctx;
-
-    mat4.mul(this.worldViewProj, rv.viewProj, world);
-    ctx.setUniform('world', world);
-    ctx.setUniform('worldViewProj', this.worldViewProj);
-    ctx.setUniform('tint', rv.tint[0] * intensity, rv.tint[1] * intensity, rv.tint[2] * intensity);
-
-    // TODO(tom): check for WEBGL_multi_draw support and draw all batches with
-    // a single call.
-    for (let batch of batches) {
-      ctx.draw(batch.va);
-    }
+  private drawBatches(rv: RenderView, world: mat4.Type, batches: Batch[]) {
+    this.ctx.setUniform('world', world);
+    for (let batch of batches) { this.ctx.draw(batch.va); }
   }
 
   private drawWorldGeometry(rv: RenderView) {
     let ctx = this.ctx;
+
+    let passes: [ShaderProgram, 'quadBatches' | 'triBatches'][] = [
+      [rv.quadShader, 'quadBatches'],
+      [rv.triShader, 'triBatches'],
+    ];
+
+    for (let [shader, batchKey] of passes) {
+      ctx.useProgram(shader);
+      ctx.setUniform('world', this.identity);
+      ctx.setUniform('viewProj', rv.viewProj);
+      ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
+      this.disableLighting();
+      for (let visibleRoom of rv.visibleRooms) {
+        if (visibleRoom.stencilMask) {
+          this.drawPortalStencil(visibleRoom, rv.viewProj);
+          ctx.enable(GL.STENCIL_TEST);
+          ctx.useProgram(shader);
+        }
+        ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, 1));
+        for (let batch of visibleRoom.room[batchKey]) { ctx.draw(batch.va); }
+        if (visibleRoom.stencilMask) {
+          ctx.disable(GL.STENCIL_TEST);
+        }
+      }
+    }
+    /*
     ctx.useProgram(rv.quadShader);
     ctx.setUniform('world', this.identity);
     ctx.setUniform('worldViewProj', rv.viewProj);
@@ -624,8 +664,7 @@ export class Renderer {
         ctx.enable(GL.STENCIL_TEST);
         ctx.useProgram(rv.quadShader);
       }
-      rv.updateTint(visibleRoom.room);
-      ctx.setUniform('tint', rv.tint[0], rv.tint[1], rv.tint[2]);
+      ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, 1));
       for (let batch of visibleRoom.room.quadBatches) { ctx.draw(batch.va); }
       if (visibleRoom.stencilMask) {
         ctx.disable(GL.STENCIL_TEST);
@@ -643,57 +682,53 @@ export class Renderer {
         ctx.enable(GL.STENCIL_TEST);
         ctx.useProgram(rv.triShader);
       }
-      rv.updateTint(visibleRoom.room);
-      ctx.setUniform('tint', rv.tint[0], rv.tint[1], rv.tint[2]);
+      ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, 1));
       for (let batch of visibleRoom.room.triBatches) { ctx.draw(batch.va); }
       if (visibleRoom.stencilMask) {
         ctx.disable(GL.STENCIL_TEST);
       }
     }
+    */
   }
 
   private drawStaticGeometry(rv: RenderView) {
     let ctx = this.ctx;
+
     ctx.useProgram(rv.quadShader);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
-      rv.updateTint(visibleRoom.room);
       for (let roomStaticMesh of visibleRoom.room.renderableStaticMeshes) {
+        ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, roomStaticMesh.intensity));
         let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
-        this.drawBatches(
-            rv,
-            roomStaticMesh.transform,
-            roomStaticMesh.intensity,
-            mesh.quadBatches);
+        this.drawBatches(rv, roomStaticMesh.transform, mesh.quadBatches);
       }
     }
 
     ctx.useProgram(rv.triShader);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
-      rv.updateTint(visibleRoom.room);
       for (let roomStaticMesh of visibleRoom.room.renderableStaticMeshes) {
+        ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, roomStaticMesh.intensity));
         let mesh = this.scene.meshes[roomStaticMesh.staticMesh.mesh];
-        this.drawBatches(
-            rv,
-            roomStaticMesh.transform,
-            roomStaticMesh.intensity,
-            mesh.triBatches);
+        this.drawBatches(rv, roomStaticMesh.transform, mesh.triBatches);
       }
     }
   }
 
   private drawSprites(rv: RenderView) {
     let ctx = this.ctx;
+
     ctx.useProgram(this.shaders.sprite);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of rv.visibleRooms) {
       let sb = visibleRoom.room.spriteBatch;
       if (sb != null) {
         ctx.setUniform('translation', 0, 0, 0);
-        ctx.setUniform('viewProj', rv.viewProj);
         ctx.draw(sb.va);
       }
 
@@ -705,7 +740,6 @@ export class Renderer {
         let frame = this.texAnimIndex % item.spriteSequence.batches.length;
         let batch = item.spriteSequence.batches[frame];
         ctx.setUniform('translation', item.position);
-        ctx.setUniform('viewProj', rv.viewProj);
         ctx.draw(batch.va);
       }
     }
@@ -714,37 +748,31 @@ export class Renderer {
   private drawMoveables(rv: RenderView) {
     let ctx = this.ctx;
     ctx.useProgram(rv.quadShader);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of rv.visibleRooms) {
-      rv.updateTint(visibleRoom.room);
       for (let item of visibleRoom.moveables) {
         if (item.isSaveCrystal()) { continue; }
         this.setLighting(item);
+        ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, item.intensity));
         for (let idx of item.moveable.renderableMeshIndices) {
           let mesh = item.moveable.meshes[idx];
-          this.drawBatches(
-              rv,
-              item.animState.meshTransforms[idx],
-              item.intensity,
-              mesh.quadBatches);
+          this.drawBatches(rv, item.animState.meshTransforms[idx], mesh.quadBatches);
         }
       }
     }
 
     ctx.useProgram(rv.triShader);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     for (let visibleRoom of rv.visibleRooms) {
-      rv.updateTint(visibleRoom.room);
       for (let item of visibleRoom.moveables) {
         if (item.isSaveCrystal()) { continue; }
         this.setLighting(item);
+        ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, item.intensity));
         for (let idx of item.moveable.renderableMeshIndices) {
           let mesh = item.moveable.meshes[idx];
-          this.drawBatches(
-              rv,
-              item.animState.meshTransforms[idx],
-              item.intensity,
-              mesh.triBatches);
+          this.drawBatches(rv, item.animState.meshTransforms[idx], mesh.triBatches);
         }
       }
     }
@@ -756,6 +784,8 @@ export class Renderer {
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     ctx.setUniform('tint', 0.3, 0.3, 2.0);
     ctx.setUniform('eyePos', rv.eyePos);
+    ctx.setUniform('view', rv.view);
+    ctx.setUniform('viewProj', rv.viewProj);
     for (let visibleRoom of rv.visibleRooms) {
       for (let item of visibleRoom.moveables) {
         if (!item.isSaveCrystal()) { continue; }
@@ -763,11 +793,7 @@ export class Renderer {
         let animState = item.animState;
         for (let idx of moveable.renderableMeshIndices) {
           let mesh = moveable.meshes[idx];
-          let world = animState.meshTransforms[idx];
-          mat4.mul(this.worldViewProj, rv.viewProj, world);
-          mat4.mul(this.worldView, rv.view, world);
-          ctx.setUniform('worldView', this.worldView);
-          ctx.setUniform('worldViewProj', this.worldViewProj);
+          ctx.setUniform('world', animState.meshTransforms[idx]);
           for (let batch of mesh.triBatches) { ctx.draw(batch.va); }
           for (let batch of mesh.quadBatches) { ctx.draw(batch.va); }
         }

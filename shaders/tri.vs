@@ -1,7 +1,7 @@
 #include "shaders/lighting.inc"
 
 uniform mat4 world;
-uniform mat4 worldViewProj;
+uniform mat4 viewProj;
 uniform vec3 tint;
 uniform sampler2D lightTex;
 
@@ -18,5 +18,5 @@ void main(void) {
   vec3 lightMap = 2.0 * texture(lightTex, lightUv).xyz;
   v_color = tint * dynamicLight * lightMap;
   v_uv = uv;
-  gl_Position = worldViewProj * vec4(position, 1);
+  gl_Position = viewProj * (world * vec4(position, 1));
 }
