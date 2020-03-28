@@ -25,3 +25,11 @@ float calculateLighting(vec3 normal) {
   return 1.0;
 #endif
 }
+
+vec3 unpackLightMap(vec3 col) {
+  return 8.0 * (col - 0.5);
+}
+
+vec3 packLightMap(vec3 col) {
+  return 0.125 * col + 0.5;
+}

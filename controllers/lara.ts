@@ -167,9 +167,9 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[13];
 
       // caves - switch
-      // vec3.setFromValues(item.position, 50831, 7680, 57704);
-      // item.rotation[1] = 1.5 * Math.PI;
-      // item.room = this.scene.rooms[9];
+      vec3.setFromValues(item.position, 50831, 7680, 57704);
+      item.rotation[1] = 1.5 * Math.PI;
+      item.room = this.scene.rooms[9];
 
       // caves - timed switch
       // vec3.setFromValues(item.position, 24447.9, 6912.0, 83495.9);
@@ -182,9 +182,9 @@ export class Lara extends Controller {
       // item.room = this.scene.rooms[28];
 
       // caves - save crystal
-      vec3.setFromValues(item.position, 8537, 3840, 68405);
-      item.rotation[1] = Math.PI;
-      item.room = this.scene.rooms[20];
+      // vec3.setFromValues(item.position, 8537, 3840, 68405);
+      // item.rotation[1] = Math.PI;
+      // item.room = this.scene.rooms[20];
     } else if (scene.name == 'LEVEL02.PHD') {
       // vilcabamba - underwater switch
       // vec3.setFromValues(item.position, 71808, 1702, 18992);

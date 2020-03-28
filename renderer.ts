@@ -33,6 +33,16 @@ let tmp = vec3.newZero();
 
 console.log(`
   Calculating value to make quad bilinear interpolation match triangle interpolation:
+   a
+   |\
+   |  \
+   |    \
+   b--.---d
+    \  x  |
+      \   |
+        \ |
+          c
+
    a         b
     +-------+
     |  x   /|
@@ -41,6 +51,12 @@ console.log(`
     |/      |
     +-------+
    d         c
+
+   a------b
+    \     | \
+      \   .x  \
+        \ |     \
+          d------c
 
   For the simple mid-point case:
     x = (a + b + c + d) / 4
@@ -282,7 +298,7 @@ export class Renderer {
       data: scene.lightTex.data,
       filter: GL.LINEAR,
       wrap: GL.CLAMP_TO_EDGE,
-      format: GL.RGBA8,
+      format: GL.RGB10_A2,
     };
     this.bakedLightTex = ctx.newTexture2D(lightTexDef);
     this.lightFb = ctx.newFramebuffer(lightTexDef);
@@ -367,9 +383,9 @@ export class Renderer {
   }
 
   render(time: number, cameraTransform: mat4.Type, room: Room) {
-    if (this.probeFields[room.id] == null) {
-      this.probeFields[room.id] = this.createProbeFieldForRoom(room);
-    }
+    // if (this.probeFields[room.id] == null) {
+    //   this.probeFields[room.id] = this.createProbeFieldForRoom(room);
+    // }
 
     let ctx = this.ctx;
 
@@ -628,34 +644,10 @@ export class Renderer {
   private drawWorldGeometry(rv: RenderView) {
     let ctx = this.ctx;
 
-    let passes: [ShaderProgram, 'quadBatches' | 'triBatches'][] = [
-      [rv.quadShader, 'quadBatches'],
-      [rv.triShader, 'triBatches'],
-    ];
-
-    for (let [shader, batchKey] of passes) {
-      ctx.useProgram(shader);
-      ctx.setUniform('world', this.identity);
-      ctx.setUniform('viewProj', rv.viewProj);
-      ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
-      this.disableLighting();
-      for (let visibleRoom of rv.visibleRooms) {
-        if (visibleRoom.stencilMask) {
-          this.drawPortalStencil(visibleRoom, rv.viewProj);
-          ctx.enable(GL.STENCIL_TEST);
-          ctx.useProgram(shader);
-        }
-        ctx.setUniform('tint', rv.calculateTint(visibleRoom.room, 1));
-        for (let batch of visibleRoom.room[batchKey]) { ctx.draw(batch.va); }
-        if (visibleRoom.stencilMask) {
-          ctx.disable(GL.STENCIL_TEST);
-        }
-      }
-    }
-    /*
+if (!debug.options.triangles) {
     ctx.useProgram(rv.quadShader);
     ctx.setUniform('world', this.identity);
-    ctx.setUniform('worldViewProj', rv.viewProj);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
@@ -670,10 +662,10 @@ export class Renderer {
         ctx.disable(GL.STENCIL_TEST);
       }
     }
-
+} else {
     ctx.useProgram(rv.triShader);
     ctx.setUniform('world', this.identity);
-    ctx.setUniform('worldViewProj', rv.viewProj);
+    ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
     this.disableLighting();
     for (let visibleRoom of rv.visibleRooms) {
@@ -688,12 +680,13 @@ export class Renderer {
         ctx.disable(GL.STENCIL_TEST);
       }
     }
-    */
+}
   }
 
   private drawStaticGeometry(rv: RenderView) {
     let ctx = this.ctx;
 
+if (!debug.options.triangles) {
     ctx.useProgram(rv.quadShader);
     ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
@@ -705,7 +698,7 @@ export class Renderer {
         this.drawBatches(rv, roomStaticMesh.transform, mesh.quadBatches);
       }
     }
-
+} else {
     ctx.useProgram(rv.triShader);
     ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
@@ -717,6 +710,7 @@ export class Renderer {
         this.drawBatches(rv, roomStaticMesh.transform, mesh.triBatches);
       }
     }
+}
   }
 
   private drawSprites(rv: RenderView) {
@@ -747,6 +741,8 @@ export class Renderer {
 
   private drawMoveables(rv: RenderView) {
     let ctx = this.ctx;
+
+if (!debug.options.triangles) {
     ctx.useProgram(rv.quadShader);
     ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
@@ -761,7 +757,7 @@ export class Renderer {
         }
       }
     }
-
+} else {
     ctx.useProgram(rv.triShader);
     ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
@@ -776,6 +772,7 @@ export class Renderer {
         }
       }
     }
+}
   }
 
   private drawCrystals(rv: RenderView) {

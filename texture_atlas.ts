@@ -1,17 +1,18 @@
 import {Rect} from 'toybox/math/rect'
+import {TypedArray, TypedArrayConstructor} from 'toybox/util/array'
 
 export class TextureAtlas {
-  private shelfBottom_ = 0;
-  private shelfWidth_ = 0;
-  private shelfHeight_ = 0;
-  data: Uint8Array;
+  private shelfBottom = 0;
+  private shelfWidth = 0;
+  private shelfHeight = 0;
+  data: TypedArray;
 
-  constructor(public width: number, public height: number, public padding: number) {
-    this.data = new Uint8Array(width * height * 4);
+  constructor(ctor: TypedArrayConstructor, public width: number, public height: number, public numChannels: number, public padding: number) {
+    this.data = new ctor(width * height * numChannels);
   }
 
-  add(w: number, h: number, data: Uint8Array, bounds: Rect) {
-    if (w * h * 4 != data.length) {
+  add(w: number, h: number, data: TypedArray, bounds: Rect) {
+    if (w * h * this.numChannels != data.length) {
       throw ':(';
     }
     let wPad = w + this.padding * 2;
@@ -21,17 +22,17 @@ export class TextureAtlas {
           ') in atlas of size (' + this.width + ', ' + this.height + ')';
     }
 
-    if (this.shelfWidth_ + wPad >= this.width) {
-      this.shelfBottom_ += this.shelfHeight_;
-      this.shelfWidth_ = 0;
-      this.shelfHeight_ = 0;
+    if (this.shelfWidth + wPad >= this.width) {
+      this.shelfBottom += this.shelfHeight;
+      this.shelfWidth = 0;
+      this.shelfHeight = 0;
     }
-    if (this.shelfBottom_ + h > this.height) {
+    if (this.shelfBottom + h > this.height) {
       throw 'Texture atlas is full';
     }
 
-    let x = this.shelfWidth_;
-    let y = this.shelfBottom_;
+    let x = this.shelfWidth;
+    let y = this.shelfBottom;
 
     for (let dstJ = 0; dstJ < hPad; ++dstJ) {
       let srcJ = dstJ - this.padding;
@@ -39,17 +40,16 @@ export class TextureAtlas {
       for (let dstI = 0; dstI < wPad; ++dstI) {
         let srcI = dstI - this.padding;
         if (srcI < 0) { srcI = 0; } else if (srcI >= w) { srcI = w - 1; }
-        let srcIdx = 4 * (srcI + srcJ * w);
-        let dstIdx = 4 * (dstI + x + (dstJ + y) * this.width);
-        this.data[dstIdx++] = data[srcIdx++];
-        this.data[dstIdx++] = data[srcIdx++];
-        this.data[dstIdx++] = data[srcIdx++];
-        this.data[dstIdx++] = data[srcIdx++];
+        let srcIdx = this.numChannels * (srcI + srcJ * w);
+        let dstIdx = this.numChannels * (dstI + x + (dstJ + y) * this.width);
+        for (let c = 0; c < this.numChannels; ++c) {
+          this.data[dstIdx++] = data[srcIdx++];
+        }
       }
     }
 
-    this.shelfWidth_ += wPad;
-    this.shelfHeight_ = Math.max(this.shelfHeight_, hPad);
+    this.shelfWidth += wPad;
+    this.shelfHeight = Math.max(this.shelfHeight, hPad);
 
     bounds.left = (x + this.padding) / this.width;
     bounds.top = (y + this.padding) / this.height;
@@ -63,6 +63,10 @@ export class TextureAtlas {
   // This can fix bilinear filtering artifacts when using alpha testing or
   // non-premultiplied alpha blending.
   dilateOpaque() {
+    if (this.numChannels != 4) {
+      throw new Error(`Expected 4 channels, got ${this.numChannels}`);
+    }
+
     let w = this.width;
     let h = this.height;
     let data = this.data;

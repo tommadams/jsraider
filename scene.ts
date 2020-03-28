@@ -1,15 +1,17 @@
 import * as mat4 from 'toybox/math/mat4';
 import * as vec2 from 'toybox/math/vec2';
 import * as vec3 from 'toybox/math/vec3';
-import {Animation, AnimCommand, AnimDispatch, AnimState, Frame, StateChange, parseFrames} from 'animation';
+
 import {Context} from 'toybox/gl/context';
 import {TextureAtlas} from 'texture_atlas';
 import {VertexArray} from 'toybox/gl/vertex_array';
 import {Rect} from 'toybox/math/rect';
-import {BatchBuilder} from 'batch_builder';
 import {GL} from 'toybox/gl/constants';
+import {TypedArray} from 'toybox/util/array';
 import {Stream} from 'toybox/util/stream';
 
+import {Animation, AnimCommand, AnimDispatch, AnimState, Frame, StateChange, parseFrames} from 'animation';
+import {BatchBuilder} from 'batch_builder';
 import {Block} from 'controllers/block';
 import {Controller} from 'controllers/controller';
 import {Lara, LaraBone, LocomotionType} from 'controllers/lara';
@@ -1372,7 +1374,7 @@ export class Room {
 export interface TextureData {
   width: number;
   height: number;
-  data: Uint8Array;
+  data: TypedArray;
 }
 
 export class FlipMapEntry {
@@ -1488,7 +1490,7 @@ export class Scene {
     }
 
     // Create texture atlas with some padding around each source texture.
-    let atlas = new TextureAtlas(4096, 2048, 16);
+    let atlas = new TextureAtlas(Uint8Array, 4096, 2048, 4, 16);
     let rgbaTiles = this.create32bitTiles();
     this.atlasObjectTextures = this.createAtlasObjectTextures(rgbaTiles, atlas);
     this.atlasSpriteTextures(rgbaTiles, atlas);
@@ -1511,7 +1513,7 @@ export class Scene {
     }
 
     // Create a texture atlas for light maps. No padding needed this time.
-    let lightMap = new TextureAtlas(512, 512, 0);
+    let lightMap = new TextureAtlas(Uint32Array, 512, 512, 1, 0);
     for (let i = 0; i < this.rooms.length; ++i) {
       this.rooms[i].init(ctx, this, i, lightMap);
     }

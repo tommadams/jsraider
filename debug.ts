@@ -59,6 +59,7 @@ export let options = {
   sprites: false,
   staticMeshes: false,
   stencilPortals: true,
+  triangles: false,
 };
 
 export function init(context: Context) {
@@ -80,6 +81,7 @@ export function init(context: Context) {
     {prop: 'sprites'},
     {prop: 'staticMeshes'},
     {prop: 'stencilPortals'},
+    {prop: 'triangles'},
   ]);
 }
 

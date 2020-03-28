@@ -15,7 +15,7 @@ out vec2 v_uv;
 
 void main(void) {
   float dynamicLight = calculateLighting(normalize((world * vec4(normal, 0)).xyz));
-  vec3 lightMap = 2.0 * texture(lightTex, lightUv).xyz;
+  vec3 lightMap = unpackLightMap(texture(lightTex, lightUv).xyz);
   v_color = tint * dynamicLight * lightMap;
   v_uv = uv;
   gl_Position = viewProj * (world * vec4(position, 1));

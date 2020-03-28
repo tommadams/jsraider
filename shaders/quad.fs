@@ -1,6 +1,7 @@
 #include "shaders/quad_st.inc"
 #include "shaders/sample_aann.inc"
 #include "shaders/util.inc"
+#include "shaders/lighting.inc"
 
 uniform mat4 proj;
 uniform sampler2D tex;
@@ -30,9 +31,13 @@ void main(void) {
   }
 
   vec2 lightMapUv = v_lightUv + st / vec2(textureSize(lightTex, 0));
-  vec3 lightMap = 2.0 * texture(lightTex, lightMapUv).xyz;
+  vec3 lightMap = unpackLightMap(texture(lightTex, lightMapUv).xyz);
 
   o_color.xyz *= v_color * lightMap;
   o_color.xyz = finalizeColor(o_color.xyz);
+
+  // o_color.xyz *= 0.01;
+  // o_color.xy += abs(v_pp1.xy) * 50.0 / 1024.0;
+  // o_color.xy += st;
 }
 
