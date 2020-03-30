@@ -32,11 +32,81 @@ function packRgb10A2(col: vec3.Type) {
 }
 
 
+function calculateNormal(a: vec3.Type, b: vec3.Type, c: vec3.Type, n: vec3.Type) {
+  c = vec3.sub(tmpNorm[0], c, a);
+  b = vec3.sub(tmpNorm[1], b, a);
+  vec3.normalize(n, vec3.cross(n, b, c));
+}
+
+
+function calculateUvLayout(texture: AtlasObjectTexture, indices: number[], texFlip: boolean[]) {
+  let n = indices.length;
+
+  // Find the pair of UVs that correspond to the top or bottom edges of the
+  // texture.
+  let base, next: number;
+  for (base = 0; base < n; ++base) {
+    next = (base + 1) % n;
+    if (texture.uvs[base * 2 + 1] == texture.uvs[next * 2 + 1]) {
+      break;
+    }
+  }
+  if (base == n) {
+    throw new Error('couldn\'t find UV pair that lies on top or bottom edge of texture');
+  }
+
+  for (let i = 0; i < n; ++i) {
+    indices[i] = (base + i) % n;
+  }
+  if (texture.uvs[base * 2 + 1] == texture.texBounds[1]) {
+    // indices[0] and indices[1] are on the top edge, verify that the remaining
+    // vertices are on the bottom.
+    for (let i = 2; i < n; ++i ) {
+      let j = indices[i];
+      if (texture.uvs[j * 2 + 1] != texture.texBounds[1] + texture.texBounds[3]) {
+        throw new Error('expected UV to be bottom');
+      }
+    }
+    if (texture.uvs[indices[0] * 2] == texture.texBounds[0]) {
+      // First vertex is top-left: no need to transform the texture bounds.
+      texFlip[0] = false;
+      texFlip[1] = false;
+    } else {
+      // First vertex is top-right: flip the texture bounds horizontally.
+      texFlip[0] = true;
+      texFlip[1] = false;
+    }
+  } else {
+    if (texture.uvs[base * 2 + 1] != texture.texBounds[1] + texture.texBounds[3]) {
+      throw new Error('expected UV to be bottom');
+    }
+    // indices[0] and indices[1] are on the bottom edge, verify that the remaining
+    // vertices are on the top.
+    for (let i = 2; i < n; ++i ) {
+      let j = indices[i];
+      if (texture.uvs[j * 2 + 1] != texture.texBounds[1]) {
+        throw new Error('expected UV to be top');
+      }
+    }
+    if (texture.uvs[indices[0] * 2] == texture.texBounds[0]) {
+      // First vertex is bottom-left: flip the texture bounds vertically.
+      texFlip[0] = false;
+      texFlip[1] = true;
+    } else {
+      // First vertex is bottom-right: flip the texture bounds both ways.
+      texFlip[0] = true;
+      texFlip[1] = true;
+    }
+  }
+}
+
+
 export class Batch {
   attributes: number;
   va: VertexArray;
   uvs: VertexBuffer[] = [];
 }
+
 
 export class TriBatch extends Batch {
   constructor(ctx: Context, buffer: TriBuffer) {
@@ -61,6 +131,7 @@ export class TriBatch extends Batch {
     }
   }
 }
+
 
 export class QuadBatch extends Batch {
   constructor(ctx: Context, buffer: QuadBuffer) {
@@ -94,6 +165,7 @@ export class QuadBatch extends Batch {
   }
 }
 
+
 export class BatchBuilder {
   // A temporary buffer used to write light values into the lightMap.
   lights = new Uint32Array([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]);
@@ -119,14 +191,14 @@ export class BatchBuilder {
   }
 
   addTri(primitives: Uint16Array, base: number, texture: AtlasObjectTexture,
-         color: number[]|null) {
+         color: number[]|null, debug=false) {
     let numFrames = texture.animTex != null ? texture.animTex.textures.length : 1;
 
-    let buffer = this.getTriBuffer(texture.attributes, numFrames);
-    buffer.addTri(primitives, base, texture, color);
+    let tb = this.getTriBuffer(texture.attributes, numFrames);
+    tb.addTri(primitives, base, texture, color);
 
-    buffer = this.getQuadBuffer(texture.attributes, numFrames);
-    buffer.addTri(primitives, base, texture, color);
+    let qb = this.getQuadBuffer(texture.attributes, numFrames);
+    qb.addTri(primitives, base, texture, color, debug);
   }
 
   build(ctx: Context, triBatches: TriBatch[], quadBatches: QuadBatch[]) {
@@ -158,6 +230,7 @@ export class BatchBuilder {
     return buffer;
   }
 }
+
 
 export class TriBuffer {
   positions: number[] = [];
@@ -218,6 +291,16 @@ export class TriBuffer {
         vec3.setFromValues(colors[i], 1, 1, 1);
       }
     }
+    if (base == 76) {
+      vec3.setFromValues(colors[0], 1, 0, 0);
+      vec3.setFromValues(colors[1], 0, 1, 0);
+      vec3.setFromValues(colors[2], 0, 0, 1);
+    }
+    if (base == 84) {
+      vec3.setFromValues(colors[0], 0, 1, 1);
+      vec3.setFromValues(colors[1], 1, 0, 1);
+      vec3.setFromValues(colors[2], 1, 1, 0);
+    }
 
     // Write vertex colors into the lightmap and calculate lightmap UVs.
     let texelStart = [0, 1, 2];
@@ -225,6 +308,7 @@ export class TriBuffer {
       this.builder.lights[texelStart[i]] = packRgb10A2(colors[i]);
     }
     this.builder.lightMap.add(2, 2, this.builder.lights, this.lightBounds);
+
     // Offset the lightmap UVs by half a texel. This serves two purposes:
     //  - The texel center needs to be aligned to the vertex position in order
     //    for bilinear filtering of the lightmap texture to work correctly.
@@ -350,6 +434,7 @@ export class TriBuffer {
   }
 }
 
+
 export class QuadBuffer {
   positions: number[] = [];
   colors: number[] = [];
@@ -409,6 +494,20 @@ export class QuadBuffer {
     }
   }
 
+  private addFlippedTexBounds(frame: number, texture: AtlasObjectTexture, numVerts: number, flip: boolean[]) {
+    let uOfs = flip[0] ? texture.texBounds[2] : 0;
+    let vOfs = flip[1] ? texture.texBounds[3] : 0;
+    let uScale = flip[0] ? -1 : 1;
+    let vScale = flip[1] ? -1 : 1;
+    for (let i = 0; i < numVerts; ++i) {
+      this.uvs[frame].push(
+        texture.texBounds[0] + uOfs,
+        texture.texBounds[1] + vOfs,
+        texture.texBounds[2] * uScale,
+        texture.texBounds[3] * vScale);
+    }
+  }
+
   /**
    * Adds a quad to the buffer.
    * Calculates a normal for the quad if the mesh doesn't have vertex normals.
@@ -460,10 +559,6 @@ export class QuadBuffer {
         vec3.setFromValues(colors[i], 1, 1, 1);
       }
     }
-    // vec3.setFromValues(colors[0], 1, 0, 0);
-    // vec3.setFromValues(colors[1], 0, 1, 0);
-    // vec3.setFromValues(colors[2], 0, 0, 1);
-    // vec3.setFromValues(colors[3], 1, 1, 1);
 
     // Write vertex colors into the lightmap and calculate lightmap UVs.
     let texelStart = [0, 1, 3, 2];
@@ -558,8 +653,6 @@ export class QuadBuffer {
 
 
 
-
-
   /**
    * Adds a tri to the buffer.
    * Calculates a normal for the tri if the mesh doesn't have vertex normals.
@@ -570,16 +663,15 @@ export class QuadBuffer {
    *              vertex colors are used if available (or flat white if not).
    */
   addTri(primitives: Uint16Array, base: number, texture: AtlasObjectTexture,
-          color: number[]|null) {
-    if (texture.uvs[0] != texture.texBounds[0] ||
-        texture.uvs[1] != texture.texBounds[1]) {
-      console.log(texture);
-      return;
-    }
+         color: number[]|null, debug=false) {
+    // TODO(tom): preallocate two windingIndices array: one for tris one for quads
+    let windingIndices: number[] = new Array(3);
+    let texFlip: boolean[] = new Array(2);
+    calculateUvLayout(texture, windingIndices, texFlip);
 
     // Calculate vertex positions.
     for (let i = 0; i < 3; ++i) {
-      let j = 3 * primitives[base + i];
+      let j = 3 * primitives[base + windingIndices[i]];
       vec3.setFromValues(
           positions[i], this.builder.positions[j],
           this.builder.positions[j+1], this.builder.positions[j+2]);
@@ -588,7 +680,7 @@ export class QuadBuffer {
 
     // Calculate vertex normals & colors.
     for (let i = 0; i < 3; ++i) {
-      let j = 3 * primitives[base + i];
+      let j = 3 * primitives[base + windingIndices[i]];
       if (this.builder.normals != null) {
         vec3.setFromValues(
           normals[i], this.builder.normals[j], this.builder.normals[j+1],
@@ -607,19 +699,28 @@ export class QuadBuffer {
         vec3.setFromValues(colors[i], 1, 1, 1);
       }
     }
+    if (debug) {
+      if (base == 76) {
+        vec3.setFromValues(colors[0], 1, 0, 0);
+        vec3.setFromValues(colors[1], 0, 1, 0);
+        vec3.setFromValues(colors[2], 0, 0, 1);
+      }
+      if (base == 84) {
+        vec3.setFromValues(colors[0], 0, 1, 1);
+        vec3.setFromValues(colors[1], 1, 0, 1);
+        vec3.setFromValues(colors[2], 1, 1, 0);
+      }
+    }
     vec3.add(colors[3], colors[1], colors[2]);
     vec3.sub(colors[3], colors[3], colors[0]);
-    /// vec3.setFromValues(colors[0], 1, 0, 0);
-    /// vec3.setFromValues(colors[1], 0, 1, 0);
-    /// vec3.setFromValues(colors[2], 0, 0, 1);
 
     // Write vertex colors into the lightmap and calculate lightmap UVs.
     let texelStart = [0, 1, 2, 3];
     for (let i = 0; i < 4; ++i) {
       this.builder.lights[texelStart[i]] = packRgb10A2(colors[i]);
     }
-
     this.builder.lightMap.add(2, 2, this.builder.lights, this.lightBounds);
+
     // Offset the lightmap UVs by half a texel. This serves two purposes:
     //  - The texel center needs to be aligned to the vertex position in order
     //    for bilinear filtering of the lightmap texture to work correctly.
@@ -666,9 +767,22 @@ export class QuadBuffer {
       vec2.setFromValues(uvs[i], positions[i][uIdx], positions[i][vIdx]);
     }
 
-    let ad = vec2.sub(uvs[1], uvs[1], uvs[0]);
-    let ab = vec2.sub(uvs[2], uvs[2], uvs[0]);
-    let ac = vec2.add(uvs[3], ab, ad);
+    let ab, ac, ad: vec2.Type;
+    let acd: vec2.Type;
+    if (texture.uvs[windingIndices[2] * 2] == texture.uvs[windingIndices[1] * 2]) {
+      ab = vec2.sub(uvs[1], uvs[1], uvs[0]);
+      ad = vec2.sub(uvs[2], uvs[2], uvs[0]);
+      ac = vec2.add(uvs[3], ab, ad);
+      acd = ac;
+    } else {
+      if (texture.uvs[windingIndices[2] * 2]!= texture.uvs[windingIndices[0] * 2]) {
+        throw new Error(':(');
+      }
+      ab = vec2.sub(uvs[1], uvs[1], uvs[0]);
+      ac = vec2.sub(uvs[2], uvs[2], uvs[0]);
+      ad = vec2.sub(uvs[3], ac, ab);
+      acd = ad;
+    }
 
     // Tomb Raider's large polygons give some GPU interpolators a hard time.
     // Scale down the vertex attributes to avoid precision issues.
@@ -677,9 +791,9 @@ export class QuadBuffer {
     vec2.scale(ad, 0.01, ad);
 
     this.pp1.push(
-            0,     0, ab[0], ab[1],
-        ab[0], ab[1], ab[0], ab[1],
-        ad[0], ad[1], ab[0], ab[1]);
+             0,      0, ab[0], ab[1],
+         ab[0],  ab[1], ab[0], ab[1],
+        acd[0], acd[1], ab[0], ab[1]);
 
     this.p2p3.push(
         ac[0], ac[1], ad[0], ad[1],
@@ -691,17 +805,10 @@ export class QuadBuffer {
       for (let i = 0; i < animTex.textures.length; ++i) {
         let idx = (texture.animOffset + i) % animTex.textures.length;
         let frame = animTex.textures[idx];
-        this.addTexBounds(i, frame, 3);
+        this.addFlippedTexBounds(i, frame, 3, texFlip);
       }
     } else {
-      this.addTexBounds(0, texture, 3);
+      this.addFlippedTexBounds(0, texture, 3, texFlip);
     }
   }
 }
-
-function calculateNormal(a: vec3.Type, b: vec3.Type, c: vec3.Type, n: vec3.Type) {
-  c = vec3.sub(tmpNorm[0], c, a);
-  b = vec3.sub(tmpNorm[1], b, a);
-  vec3.normalize(n, vec3.cross(n, b, c));
-}
-

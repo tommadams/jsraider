@@ -270,6 +270,7 @@ export class Light {
 }
 
 export class Mesh {
+  id = -1;
   center: Int16Array;
   size: number;
   positions: Int16Array;
@@ -320,7 +321,8 @@ export class Mesh {
     this.coloredTris = stream.readUint16Array(4 * stream.readUint16());
   }
 
-  init(ctx: Context, scene: Scene, lightMap: TextureAtlas) {
+  init(ctx: Context, scene: Scene, id: number, lightMap: TextureAtlas) {
+    this.id = id;
     let builder = new BatchBuilder(
         this.positions, this.colors, this.normals, lightMap);
 
@@ -331,7 +333,7 @@ export class Mesh {
 
     for (let i = 0; i < this.texturedTris.length; i += 4) {
       let texture = scene.atlasObjectTextures[this.texturedTris[i + 3]];
-      builder.addTri(this.texturedTris, i, texture, null);
+      builder.addTri(this.texturedTris, i, texture, null, this.id == 14);
     }
 
     for (let i = 0; i < this.coloredQuads.length; i += 5) {
@@ -406,6 +408,7 @@ export class ObjectTexture {
   uvs: Uint8Array;
   numUvs: number;
   uvBounds: Rect;
+  atlasTex: AtlasObjectTexture = null;
 
   constructor(stream: Stream) {
     this.attributes = stream.readUint16();
@@ -419,11 +422,18 @@ export class ObjectTexture {
     //   V value in pixels [0, 256)
     // If the ObjectTexture is for a triangle, the last four elements in the UV
     // array are all 0.
-    // TODO(tom): Actually, it seems that U type and V type can sometimes be zero
-    // too (see Palas Midas).
+    // TODO(tom): Actually, it was later discovered that UVs are 8.8 fixed point
+    // numbers. Update this code.
+    // TODO(tom): When switching to fixed point UVs, remove the extra +1 when
+    // calculating uvBounds.
     this.uvs = stream.readUint8Array(16);
 
-    this.numUvs = this.uvs[12] == 0 ? 3 : 4;
+    if (this.uvs[12] == 0 && this.uvs[13] == 0 &&
+        this.uvs[14] == 0 && this.uvs[15] == 0) {
+      this.numUvs = 3;
+    } else {
+      this.numUvs = 4;
+    }
 
     // Calculate min and max UVs.
     let minU = Math.min(this.uvs[1], this.uvs[5], this.uvs[9]);
@@ -1517,9 +1527,9 @@ export class Scene {
     for (let i = 0; i < this.rooms.length; ++i) {
       this.rooms[i].init(ctx, this, i, lightMap);
     }
-    for (let mesh of this.meshes) {
+    for (let [i, mesh] of this.meshes.entries()) {
       if (mesh != null) {
-        mesh.init(ctx, this, lightMap);
+        mesh.init(ctx, this, i, lightMap);
       }
     }
     this.lightTex = {
@@ -1952,7 +1962,6 @@ export class Scene {
    * @return {Uint8Array[]} 32bit copies of each textile in the scene.
    */
   private create32bitTiles() {
-    /*
     let pushTex = function(width: number, height: number, data: Uint8Array) {
       let canvas = document.createElement('canvas');
       canvas.width = width;
@@ -1969,7 +1978,6 @@ export class Scene {
       document.body.appendChild(document.createElement('br'));
       document.body.appendChild(canvas);
     }
-    */
 
     // Convert 8bit palettized textures to 32bit RGBA textures.
     let rgbaTiles = [];
@@ -1985,9 +1993,7 @@ export class Scene {
         dst[a++] = this.palette[b++];
       }
       rgbaTiles.push(dst);
-      /*
       pushTex(256, 256, dst);
-      */
     }
 
     return rgbaTiles;
@@ -2007,8 +2013,8 @@ export class Scene {
 
     // Create a map to dedup object textures. Because the UVs are in the range
     // [0, 256), we can map their bounds to a single 32bit integer.
-    let dedupMap: Rect[][] = [];
-    for (let i = 0; i < rgbaTiles.length; ++i) { dedupMap.push([]); }
+    let dedupMap: Map<number, Rect>[] = [];
+    for (let i = 0; i < rgbaTiles.length; ++i) { dedupMap.push(new Map<number, Rect>()); }
 
     for (let srcIdx = 0; srcIdx < this.objectTextures.length; ++srcIdx) {
       let srcTex = this.objectTextures[srcIdx];
@@ -2020,12 +2026,12 @@ export class Scene {
 
       let uvKey = uvBounds.left | (uvBounds.top << 8) |
                   (uvBounds.width << 16) | (uvBounds.height << 24);
-      let atlasBounds = dedupMap[srcTex.tile][uvKey];
-      if (!atlasBounds) {
+      let atlasBounds = dedupMap[srcTex.tile].get(uvKey);
+      if (atlasBounds == null) {
         let data = this.copyTexture(uvBounds, tile);
         atlasBounds = new Rect(0, 0, 0, 0);
         atlas.add(uvBounds.width, uvBounds.height, data, atlasBounds);
-        dedupMap[srcTex.tile][uvKey] = atlasBounds;
+        dedupMap[srcTex.tile].set(uvKey, atlasBounds);
       }
 
       dstTex.texBounds[0] = atlasBounds.left;
