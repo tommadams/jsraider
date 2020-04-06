@@ -65,7 +65,7 @@ export function init(soundMap: Int16Array, soundDetails: SoundDetails[],
 }
 
 
-// TODO(tom): playSample also needs to queue au
+// TODO(tom): playSample also needs to queue audio
 export function playSample(idx: number, x: number, y: number, z: number) {
   if (!userInteracted) {
     console.log(`Ignoring playSample(${idx}), user hasn't interacted yet`);

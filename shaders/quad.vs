@@ -11,6 +11,7 @@ in vec4 p2p3;
 in vec4 uv;
 in vec2 lightUv;
 
+out vec3 v_position;
 out vec3 v_color;
 out vec2 v_lightUv;
 out vec4 v_pp1;
@@ -20,6 +21,7 @@ out vec4 v_texBounds;
 void main(void) {
   float dynamicLight = calculateLighting(normalize((world * vec4(normal, 0)).xyz));
 
+v_position = position;
   v_color = tint * dynamicLight;
   v_lightUv = lightUv;
   v_pp1 = pp1;

@@ -270,7 +270,6 @@ export class Light {
 }
 
 export class Mesh {
-  id = -1;
   center: Int16Array;
   size: number;
   positions: Int16Array;
@@ -321,8 +320,7 @@ export class Mesh {
     this.coloredTris = stream.readUint16Array(4 * stream.readUint16());
   }
 
-  init(ctx: Context, scene: Scene, id: number, lightMap: TextureAtlas) {
-    this.id = id;
+  init(ctx: Context, scene: Scene, lightMap: TextureAtlas) {
     let builder = new BatchBuilder(
         this.positions, this.colors, this.normals, lightMap);
 
@@ -333,7 +331,7 @@ export class Mesh {
 
     for (let i = 0; i < this.texturedTris.length; i += 4) {
       let texture = scene.atlasObjectTextures[this.texturedTris[i + 3]];
-      builder.addTri(this.texturedTris, i, texture, null, this.id == 14);
+      builder.addTri(this.texturedTris, i, texture, null);
     }
 
     for (let i = 0; i < this.coloredQuads.length; i += 5) {
@@ -1529,7 +1527,7 @@ export class Scene {
     }
     for (let [i, mesh] of this.meshes.entries()) {
       if (mesh != null) {
-        mesh.init(ctx, this, i, lightMap);
+        mesh.init(ctx, this, lightMap);
       }
     }
     this.lightTex = {
@@ -1962,6 +1960,7 @@ export class Scene {
    * @return {Uint8Array[]} 32bit copies of each textile in the scene.
    */
   private create32bitTiles() {
+    /*
     let pushTex = function(width: number, height: number, data: Uint8Array) {
       let canvas = document.createElement('canvas');
       canvas.width = width;
@@ -1978,6 +1977,7 @@ export class Scene {
       document.body.appendChild(document.createElement('br'));
       document.body.appendChild(canvas);
     }
+    */
 
     // Convert 8bit palettized textures to 32bit RGBA textures.
     let rgbaTiles = [];
@@ -1993,7 +1993,7 @@ export class Scene {
         dst[a++] = this.palette[b++];
       }
       rgbaTiles.push(dst);
-      pushTex(256, 256, dst);
+      // pushTex(256, 256, dst);
     }
 
     return rgbaTiles;

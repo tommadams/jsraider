@@ -646,6 +646,7 @@ export class Renderer {
 
 if (!debug.options.triangles) {
     ctx.useProgram(rv.quadShader);
+    ctx.setUniform('time', (window as any).app.time);
     ctx.setUniform('world', this.identity);
     ctx.setUniform('viewProj', rv.viewProj);
     ctx.setUniform('fogStartDensity', this.fogStart, this.fogDensity);
@@ -860,6 +861,7 @@ if (!debug.options.triangles) {
   }
 
   private updateCaustics(time: number, visibleRooms: VisibleRoom[]) {
+    return;
     let rooms = [];
     for (let visibleRoom of visibleRooms) {
       if (visibleRoom.room.isUnderwater()) {
